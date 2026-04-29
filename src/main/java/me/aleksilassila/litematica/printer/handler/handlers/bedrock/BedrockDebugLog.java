@@ -16,8 +16,8 @@ public final class BedrockDebugLog {
     }
 
     public static synchronized void write(String message) {
-        System.out.println("[BedrockDebug] " + message);
-        if (false) {
+        // Keep the call sites intact so file logging can be re-enabled from one place later.
+        if (true) {
             return;
         }
         try {

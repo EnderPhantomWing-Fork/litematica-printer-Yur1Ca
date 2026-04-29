@@ -25,11 +25,9 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getMaxEffectiveExecutionsPerTick() {
-        int budget = Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue();
-        if (budget <= 0) {
-            budget = 1;
-        }
-        return Math.max(4, budget);
+        // Allow the scanner to submit as many targets as possible to the controller.
+        // The controller's internal TARGETS.size() and executeBudget will handle the actual throttling.
+        return -1;
     }
 
     @Override
@@ -49,7 +47,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean canIterate() {
         BedrockController.tick();
-        return BedrockController.canScanForTargets();
+        return true;
     }
 
     @Override
@@ -62,7 +60,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos))) {
             return false;
         }
-        return BedrockController.prepareCandidate(pos);
+        return BedrockController.canAccept(pos);
     }
 
     @Override

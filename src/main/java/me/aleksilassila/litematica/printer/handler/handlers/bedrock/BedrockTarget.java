@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
-import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -15,7 +14,6 @@ public class BedrockTarget {
     private static final int REPOWER_INTERVAL_TICKS = 2;
     private static final int POWERED_STALL_RECOVERY_TICKS = 2;
     private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
-    private static final int POST_EXECUTE_REBUILD_DELAY_TICKS = 4;
 
     public enum Status {
         FAILED,
@@ -50,13 +48,9 @@ public class BedrockTarget {
     public final Set<BlockPos> tempBlocks = new LinkedHashSet<>();
 
     public BedrockTarget(BlockPos bedrockPos, ClientLevel level) {
-        this(bedrockPos, level, BedrockMachineLayout.find(level, bedrockPos));
-    }
-
-    BedrockTarget(BlockPos bedrockPos, ClientLevel level, BedrockMachineLayout layout) {
         this.bedrockPos = bedrockPos;
         this.level = level;
-        this.layout = layout;
+        this.layout = BedrockMachineLayout.find(level, bedrockPos);
         if (this.layout == null) {
             this.pistonPos = bedrockPos.above();
             this.headPos = this.pistonPos.above();
@@ -131,7 +125,7 @@ public class BedrockTarget {
     public Status tick(boolean allowExecute, boolean allowInitialize) {
         this.executedThisTick = false;
         this.initializedThisTick = false;
-
+        
         // Only increment tick counter if we are actually doing something or waiting for sync.
         // This prevents tasks from failing while they are just queued in the controller.
         if (this.status != Status.UNINITIALIZED && this.status != Status.EXTENDED) {
@@ -317,15 +311,6 @@ public class BedrockTarget {
         return positions;
     }
 
-    public BlockPos getFirstOutOfRangeInteractionPos() {
-        for (BlockPos pos : getInteractionPositions()) {
-            if (pos != null && !ConfigUtils.canInteracted(pos)) {
-                return pos;
-            }
-        }
-        return null;
-    }
-
     public Set<BlockPos> getOwnedTorchPositions() {
         LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
         BlockPos torchPos = getTorchPos();
@@ -339,23 +324,6 @@ public class BedrockTarget {
         if (pos != null) {
             this.tempBlocks.add(pos);
         }
-    }
-
-    private Set<BlockPos> getInteractionPositions() {
-        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
-        positions.add(this.bedrockPos);
-        positions.add(this.pistonPos);
-        positions.add(this.headPos);
-        if (this.torchSupportPos != null) {
-            positions.add(this.torchSupportPos);
-        }
-        if (getTorchPos() != null) {
-            positions.add(getTorchPos());
-        }
-        if (this.slimePos != null) {
-            positions.add(this.slimePos);
-        }
-        return positions;
     }
 
     private boolean canBuildInitialMachine() {
@@ -444,7 +412,7 @@ public class BedrockTarget {
             this.status = Status.FAILED;
             return;
         }
-
+        
         if (!BedrockEnvironment.isTorchPlacementUsable(level, this.torchPlacement)) {
             if (this.slimePos != null && this.torchPlacement != null && this.slimePos.equals(this.torchPlacement.getSupportPos())
                     && BedrockEnvironment.isSlimePlacementUsable(level, this.torchPlacement)) {
@@ -509,21 +477,11 @@ public class BedrockTarget {
                 resetPostExecuteAttempt("sync_timeout_recover", recoveryStatus);
                 this.status = recoveryStatus;
             } else {
-                BlockPos residuePos = getRecoverableTimeoutResiduePos();
-                if (residuePos != null) {
-                    BedrockBreaker.breakBlock(residuePos, Direction.DOWN, false);
-                    resetPostExecuteAttempt("sync_timeout_clear_residue", Status.UNINITIALIZED);
-                    this.status = Status.UNINITIALIZED;
-                    BedrockDebugLog.write("target recover residue bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
-                            + " residuePos=" + BedrockDebugLog.pos(residuePos)
-                            + " state=" + BedrockDebugLog.describeState(level.getBlockState(residuePos)));
-                } else {
-                    this.status = Status.STUCK;
-                    BedrockDebugLog.write("target sync timeout bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
-                            + " tick=" + this.tickTimes
-                            + " executeTick=" + this.executeTick
-                            + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos)));
-                }
+                this.status = Status.STUCK;
+                BedrockDebugLog.write("target sync timeout bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                        + " tick=" + this.tickTimes
+                        + " executeTick=" + this.executeTick
+                        + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos)));
             }
             return;
         }
@@ -544,11 +502,6 @@ public class BedrockTarget {
             return;
         }
         if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
-            if (shouldDelayPostExecuteRebuild()) {
-                this.status = Status.NEEDS_WAITING;
-                this.stuckTicksCounter++;
-                return;
-            }
             this.status = Status.UNINITIALIZED;
             this.hasTried = false;
             this.stuckTicksCounter = 0;
@@ -630,9 +583,6 @@ public class BedrockTarget {
             return Status.EXTENDED;
         }
         if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
-            if (shouldDelayPostExecuteRebuild()) {
-                return Status.NEEDS_WAITING;
-            }
             return Status.UNINITIALIZED;
         }
         if (this.hasTried
@@ -644,13 +594,6 @@ public class BedrockTarget {
                 return Status.UNEXTENDED_WITH_POWER_SOURCE;
             }
             return Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
-        }
-        if (this.hasTried
-                && level.getBlockState(this.pistonPos).is(Blocks.PISTON)
-                && !level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.EXTENDED)
-                && level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.FACING) == this.layout.getExecuteFacing()
-                && BedrockTargetBlocks.isTargetBlock(level.getBlockState(this.bedrockPos))) {
-            return Status.UNINITIALIZED;
         }
         if (this.hasTried && (level.getBlockState(this.pistonPos).is(Blocks.PISTON) || level.getBlockState(this.pistonPos).isAir()) && this.stuckTicksCounter < 15) {
             return Status.NEEDS_WAITING;
@@ -680,12 +623,6 @@ public class BedrockTarget {
                 && (level.getBlockState(this.pistonPos).isAir() || hasPostExecuteSyncResidue());
     }
 
-    private boolean shouldDelayPostExecuteRebuild() {
-        return this.hasTried
-                && this.executeTick >= 0
-                && this.tickTimes - this.executeTick < POST_EXECUTE_REBUILD_DELAY_TICKS;
-    }
-
     private Status getRecoverablePostExecuteStatus() {
         if (!this.hasTried || this.executeTick < 0) {
             return null;
@@ -710,32 +647,6 @@ public class BedrockTarget {
             return Status.UNEXTENDED_WITH_POWER_SOURCE;
         }
         return Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
-    }
-
-    private BlockPos getRecoverableTimeoutResiduePos() {
-        BlockPos pistonResiduePos = getRecoverableTimeoutResiduePos(this.pistonPos, false);
-        if (pistonResiduePos != null) {
-            return pistonResiduePos;
-        }
-        return getRecoverableTimeoutResiduePos(this.headPos, true);
-    }
-
-    private BlockPos getRecoverableTimeoutResiduePos(BlockPos pos, boolean allowPistonHead) {
-        if (pos == null || BedrockController.isPositionReservedByOtherTarget(pos, this)) {
-            return null;
-        }
-
-        var state = level.getBlockState(pos);
-        if (!BedrockTargetBlocks.isCleanupResidue(state)) {
-            return null;
-        }
-        if (state.is(Blocks.PISTON) || state.is(Blocks.MOVING_PISTON)) {
-            return null;
-        }
-        if (state.is(Blocks.PISTON_HEAD) && !allowPistonHead) {
-            return null;
-        }
-        return pos;
     }
 
     private void resetPostExecuteAttempt(String reason, Status recoveryStatus) {
