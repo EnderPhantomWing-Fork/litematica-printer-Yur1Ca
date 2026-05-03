@@ -16,10 +16,6 @@ public final class BedrockDebugLog {
     }
 
     public static synchronized void write(String message) {
-        // Keep the call sites intact so file logging can be re-enabled from one place later.
-        if (true) {
-            return;
-        }
         try {
             Path parent = LOG_PATH.getParent();
             if (parent != null) {

@@ -19,14 +19,17 @@ public final class BedrockController {
     private static final String RETRY_COOLDOWN_KEY = "bedrock_retry";
     private static final String CLEANUP_RETRY_COOLDOWN_KEY = "cleanup_retry";
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
+    private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int CLEANUP_LIMIT_PER_TICK = 48;
+    private static final int SUBMITS_PER_TICK_CAP = 2;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
     private static long nextAcceptTick = 0L;
     private static long nextExecuteTick = 0L;
     private static long lastProcessedTick = Long.MIN_VALUE;
+    private static int acceptedThisTick = 0;
 
     private BedrockController() {
     }
@@ -41,6 +44,7 @@ public final class BedrockController {
         nextAcceptTick = 0L;
         nextExecuteTick = 0L;
         lastProcessedTick = Long.MIN_VALUE;
+        acceptedThisTick = 0;
     }
 
     public static void tick() {
@@ -55,6 +59,7 @@ public final class BedrockController {
             return;
         }
         lastProcessedTick = now;
+        acceptedThisTick = 0;
 
         // 强力清理队列：死磕到底，变空气才移除
         processCleanupQueue();
@@ -77,15 +82,27 @@ public final class BedrockController {
         executeBudget = processTargets(level, executeBudget, true, processedTargets);
         executeBudget = processTargets(level, executeBudget, false, processedTargets);
         executeBudget = processTargets(level, executeBudget, true, processedTargets);
-        
+
         if (executeBudget < initialExecuteBudget) {
             scheduleNextExecuteWindow();
         }
     }
 
+    public static boolean canScanForTargets() {
+        return acceptedThisTick < SUBMITS_PER_TICK_CAP && countActiveTargets() < getActiveTargetCap();
+    }
+
     public static boolean canAccept(BlockPos pos) {
+        if (!canScanForTargets()) return false;
         if (isTargetOnRetryCooldown(pos)) return false;
         if (countActiveTargets() >= getActiveTargetCap()) return false;
+        if (isReservedByActiveTarget(pos)) return false;
+        if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
+            setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
+            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                    + " reason=await_target_exposure");
+            return false;
+        }
 
         for (BedrockTarget target : TARGETS) {
             if (target.getBedrockPos().equals(pos)) return false;
@@ -133,6 +150,7 @@ public final class BedrockController {
 
         if (target.getStatus() != BedrockTarget.Status.FAILED) {
             TARGETS.add(target);
+            acceptedThisTick++;
             BedrockDebugLog.write("submit accepted bedrock=" + BedrockDebugLog.pos(pos)
                     + " piston=" + BedrockDebugLog.pos(target.getPistonPos())
                     + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
@@ -231,10 +249,15 @@ public final class BedrockController {
             if (pos.equals(candidate.getBedrockPos())) {
                 continue;
             }
+            var state = CLIENT.level.getBlockState(pos);
+            if (state.isAir()) {
+                CLEANUP_QUEUE.remove(pos);
+                CONSERVATIVE_CLEANUP.remove(pos);
+                continue;
+            }
             if (CLEANUP_QUEUE.contains(pos)) {
                 return pos;
             }
-            var state = CLIENT.level.getBlockState(pos);
             if (BedrockTargetBlocks.isCleanupResidue(state)) {
                 if (!isReservedByActiveTarget(pos)) {
                     addToCleanup(pos, false);
@@ -355,7 +378,7 @@ public final class BedrockController {
         if (executeBudget <= 0) {
             executeBudget = 64;
         }
-        return Math.max(8, executeBudget * 2);
+        return Math.max(4, Math.min(8, executeBudget + 1));
     }
 
     private static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
@@ -451,6 +474,18 @@ public final class BedrockController {
 
     private static boolean isReservedByActiveTarget(BlockPos pos) {
         for (BedrockTarget target : TARGETS) {
+            if (target.getReservedPositions().contains(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean isPositionReservedByOtherTarget(BlockPos pos, BedrockTarget self) {
+        for (BedrockTarget target : TARGETS) {
+            if (target == self) {
+                continue;
+            }
             if (target.getReservedPositions().contains(pos)) {
                 return true;
             }

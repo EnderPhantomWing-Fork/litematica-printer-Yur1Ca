@@ -14,6 +14,8 @@ public class BedrockTarget {
     private static final int REPOWER_INTERVAL_TICKS = 2;
     private static final int POWERED_STALL_RECOVERY_TICKS = 2;
     private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
+    private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
+    private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
 
     public enum Status {
         FAILED,
@@ -41,6 +43,7 @@ public class BedrockTarget {
     private int stuckTicksCounter;
     private int lastRepowerTick = -1;
     private int executeTick = -1;
+    private int initializeTick = -1;
     private boolean executedThisTick;
     private boolean initializedThisTick;
     private Status status = Status.UNINITIALIZED;
@@ -166,6 +169,7 @@ public class BedrockTarget {
                         + " piston=" + BedrockDebugLog.pos(this.pistonPos)
                         + " torchSupport=" + BedrockDebugLog.pos(this.torchSupportPos)
                         + " torch=" + BedrockDebugLog.pos(getTorchPos()));
+                this.initializeTick = this.tickTimes;
                 this.initializedThisTick = true;
             }
             case EXTENDED -> {
@@ -412,7 +416,12 @@ public class BedrockTarget {
             this.status = Status.FAILED;
             return;
         }
-        
+
+        if (isTargetCompleted()) {
+            this.status = Status.RETRACTED;
+            return;
+        }
+
         if (!BedrockEnvironment.isTorchPlacementUsable(level, this.torchPlacement)) {
             if (this.slimePos != null && this.torchPlacement != null && this.slimePos.equals(this.torchPlacement.getSupportPos())
                     && BedrockEnvironment.isSlimePlacementUsable(level, this.torchPlacement)) {
@@ -423,6 +432,9 @@ public class BedrockTarget {
                 this.torchSupportPos = getTorchSupportFromPlacement();
             } else {
                 BedrockTorchPlacement naturalPlacement = BedrockEnvironment.findTorchPlacement(level, this.pistonPos, this.layout.getPistonOffset().getOpposite(), this.bedrockPos, this.pistonPos, this.headPos);
+                if (isPlacementReservedByOtherTarget(naturalPlacement)) {
+                    naturalPlacement = null;
+                }
                 if (naturalPlacement != null) {
                     this.torchPlacement = naturalPlacement;
                     this.torchSupportPos = getTorchSupportFromPlacement();
@@ -433,6 +445,9 @@ public class BedrockTarget {
                     BedrockTorchPlacement slimePlacement = this.torchPlacement;
                     if (slimePlacement == null || !BedrockEnvironment.isSlimePlacementUsable(level, slimePlacement) || !slimePlacement.getSupportPos().equals(this.slimePos)) {
                         slimePlacement = BedrockEnvironment.findPossibleSlimeTorchPlacement(level, this.pistonPos, this.layout.getPistonOffset().getOpposite(), this.bedrockPos, this.pistonPos, this.headPos);
+                    }
+                    if (isPlacementReservedByOtherTarget(slimePlacement)) {
+                        slimePlacement = null;
                     }
                     if (slimePlacement != null) {
                         this.torchPlacement = slimePlacement;
@@ -501,6 +516,11 @@ public class BedrockTarget {
             this.status = Status.EXTENDED;
             return;
         }
+        if (shouldWaitForPostExecuteAirTransition()) {
+            this.status = Status.NEEDS_WAITING;
+            this.stuckTicksCounter++;
+            return;
+        }
         if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
             this.status = Status.UNINITIALIZED;
             this.hasTried = false;
@@ -538,6 +558,10 @@ public class BedrockTarget {
             this.status = recoverableUnextendedStatus;
             return;
         }
+        if (shouldWaitForInitializeSettle()) {
+            this.status = Status.NEEDS_WAITING;
+            return;
+        }
         if (BedrockEnvironment.hasRoomForPiston(this.level, this.pistonPos, this.layout.getPistonOffset())) {
             this.status = Status.UNINITIALIZED;
             return;
@@ -553,6 +577,10 @@ public class BedrockTarget {
     }
 
     private Status observeStatus() {
+        if (isTargetCompleted()) {
+            return Status.RETRACTED;
+        }
+
         if (!BedrockTargetBlocks.isTargetBlock(level.getBlockState(this.bedrockPos))
                 && level.getBlockState(this.pistonPos).is(Blocks.PISTON)) {
             return Status.RETRACTED;
@@ -582,6 +610,9 @@ public class BedrockTarget {
         if (level.getBlockState(this.pistonPos).is(Blocks.PISTON) && level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.EXTENDED)) {
             return Status.EXTENDED;
         }
+        if (shouldWaitForPostExecuteAirTransition()) {
+            return Status.NEEDS_WAITING;
+        }
         if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
             return Status.UNINITIALIZED;
         }
@@ -605,6 +636,9 @@ public class BedrockTarget {
         if (recoverableUnextendedStatus != null) {
             return recoverableUnextendedStatus;
         }
+        if (shouldWaitForInitializeSettle()) {
+            return Status.NEEDS_WAITING;
+        }
         if (BedrockEnvironment.hasRoomForPiston(this.level, this.pistonPos, this.layout.getPistonOffset())) {
             return Status.UNINITIALIZED;
         }
@@ -621,6 +655,29 @@ public class BedrockTarget {
                 && this.executeTick >= 0
                 && this.tickTimes - this.executeTick >= POST_EXECUTE_SYNC_TIMEOUT_TICKS
                 && (level.getBlockState(this.pistonPos).isAir() || hasPostExecuteSyncResidue());
+    }
+
+    private boolean shouldWaitForPostExecuteAirTransition() {
+        if (!this.hasTried || !level.getBlockState(this.pistonPos).isAir()) {
+            return false;
+        }
+        if (hasTransientMachineResidue()) {
+            return true;
+        }
+        return this.executeTick >= 0
+                && this.tickTimes - this.executeTick < POST_EXECUTE_AIR_SETTLE_TICKS
+                && !BedrockEnvironment.hasRoomForPiston(this.level, this.pistonPos, this.layout.getPistonOffset());
+    }
+
+    private boolean shouldWaitForInitializeSettle() {
+        return !this.hasTried
+                && this.initializeTick >= 0
+                && this.tickTimes - this.initializeTick <= INITIALIZE_SYNC_GRACE_TICKS
+                && hasTransientMachineResidue();
+    }
+
+    private boolean isTargetCompleted() {
+        return !BedrockTargetBlocks.isTargetBlock(level.getBlockState(this.bedrockPos));
     }
 
     private Status getRecoverablePostExecuteStatus() {
@@ -649,6 +706,16 @@ public class BedrockTarget {
         return Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
     }
 
+    private boolean isPlacementReservedByOtherTarget(BedrockTorchPlacement placement) {
+        if (placement == null) {
+            return false;
+        }
+        BlockPos supportPos = placement.getSupportPos();
+        BlockPos torchPos = placement.getTorchPos();
+        return BedrockController.isPositionReservedByOtherTarget(supportPos, this)
+                || BedrockController.isPositionReservedByOtherTarget(torchPos, this);
+    }
+
     private void resetPostExecuteAttempt(String reason, Status recoveryStatus) {
         this.hasTried = false;
         this.stuckTicksCounter = 0;
@@ -669,6 +736,36 @@ public class BedrockTarget {
 
     private boolean hasPostExecuteSyncResidue() {
         return hasCleanupResidue(this.pistonPos) || hasCleanupResidue(this.headPos);
+    }
+
+    private boolean hasTransientMachineResidue() {
+        return isTransientMachineResidue(this.pistonPos, false)
+                || isTransientMachineResidue(this.headPos, true);
+    }
+
+    private boolean isTransientMachineResidue(BlockPos pos, boolean headSlot) {
+        if (pos == null) {
+            return false;
+        }
+
+        var state = level.getBlockState(pos);
+        if (state.isAir()) {
+            return false;
+        }
+        if (headSlot && state.is(Blocks.PISTON_HEAD)) {
+            return true;
+        }
+        if (state.is(Blocks.PISTON)) {
+            if (pos.equals(this.pistonPos)) {
+                Direction facing = state.getValue(PistonBaseBlock.FACING);
+                boolean validFacing = facing == this.layout.getPrimingFacing() || facing == this.layout.getExecuteFacing();
+                if (validFacing && !state.getValue(PistonBaseBlock.EXTENDED)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return BedrockTargetBlocks.isCleanupResidue(state);
     }
 
     private boolean hasCleanupResidue(BlockPos pos) {

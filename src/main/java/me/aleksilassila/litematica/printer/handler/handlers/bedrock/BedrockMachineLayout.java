@@ -43,6 +43,23 @@ public final class BedrockMachineLayout {
         return null;
     }
 
+    public static boolean shouldDeferUntilExposed(ClientLevel level, BlockPos bedrockPos) {
+        if (level == null || bedrockPos == null) {
+            return false;
+        }
+        if (find(level, bedrockPos) != null) {
+            return false;
+        }
+        for (Direction direction : SEARCH_ORDER) {
+            BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
+            if (isBlockingTarget(level, bedrockPos, layout.getPistonPos())
+                    || isBlockingTarget(level, bedrockPos, layout.getHeadPos())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public BlockPos getBedrockPos() {
         return this.bedrockPos;
     }
@@ -69,5 +86,12 @@ public final class BedrockMachineLayout {
 
     public Direction getExecuteFacing() {
         return this.pistonOffset.getOpposite();
+    }
+
+    private static boolean isBlockingTarget(ClientLevel level, BlockPos bedrockPos, BlockPos pos) {
+        return pos != null
+                && !pos.equals(bedrockPos)
+                && !level.isOutsideBuildHeight(pos)
+                && BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos));
     }
 }
