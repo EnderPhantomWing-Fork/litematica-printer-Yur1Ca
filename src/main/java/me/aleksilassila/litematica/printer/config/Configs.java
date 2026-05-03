@@ -37,9 +37,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     private static final BooleanSupplier isSingle = () -> Core.WORK_MODE.getOptionListValue().equals(WorkingModeType.SINGLE);
     private static final BooleanSupplier isMulti = () -> Core.WORK_MODE.getOptionListValue().equals(WorkingModeType.MULTI);
 
-    private static final BooleanSupplier isPrintBreakCustom = () -> Print.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.CUSTOM);
-    private static final BooleanSupplier isPrintBreakWhitelist = () -> isPrintBreakCustom.getAsBoolean() && Print.BREAK_LIMIT.getOptionListValue().equals(UsageRestriction.ListType.WHITELIST);
-    private static final BooleanSupplier isPrintBreakBlacklist = () -> isPrintBreakCustom.getAsBoolean() && Print.BREAK_LIMIT.getOptionListValue().equals(UsageRestriction.ListType.BLACKLIST);
+    private static final BooleanSupplier isBreakCustom = () -> Break.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.CUSTOM);
+    private static final BooleanSupplier isBreakWhitelist = () -> isBreakCustom.getAsBoolean() && Break.BREAK_LIMIT.getOptionListValue().equals(UsageRestriction.ListType.WHITELIST);
+    private static final BooleanSupplier isBreakBlacklist = () -> isBreakCustom.getAsBoolean() && Break.BREAK_LIMIT.getOptionListValue().equals(UsageRestriction.ListType.BLACKLIST);
 
 
     private static final BooleanSupplier isExcavateCustom = () -> Mine.EXCAVATE_LIMITER.getOptionListValue().equals(ExcavateListMode.CUSTOM);
@@ -307,24 +307,17 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     }
 
     public static class Break {
-        public static final ConfigBoolean FAST_BREAK = bool("fastBreak")
-                .defaultValue(false)
-                .build();
-
         public static final ConfigBoolean BREAK_USE_PACKET = bool("breakUsePacket")
                 .defaultValue(false)
-                .setVisible(() -> !FAST_BREAK.getBooleanValue())
                 .build();
 
         public static final ConfigBoolean BREAK_USE_DELAYED_DESTROY = bool("breakUseDelayedDestroy")
                 .defaultValue(false)
-                .setVisible(() -> !FAST_BREAK.getBooleanValue())
                 .build();
 
         public static final ConfigInteger BREAK_PROGRESS_THRESHOLD = integer("breakProgressThreshold")
                 .defaultValue(100)
                 .range(70, 100)
-                .setVisible(() -> !FAST_BREAK.getBooleanValue())
                 .build();
 
         public static final ConfigInteger BREAK_INTERVAL = integer("breakInterval")
@@ -346,17 +339,35 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
-        public static final ConfigBoolean BREAK_INSTANT_MINE = bool("breakInstantOnSameTick")
-                .defaultValue(false)
+        public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
+                .defaultValue(ExcavateListMode.CUSTOM)
+                .build();
+
+        public static final ConfigOptionList BREAK_LIMIT = optionList("breakLimit")
+                .defaultValue(UsageRestriction.ListType.NONE)
+                .setVisible(isBreakCustom)
+                .build();
+
+        public static final ConfigStringList BREAK_WHITELIST = stringList("breakWhitelist")
+                .setVisible(isBreakWhitelist)
+                .build();
+
+        public static final ConfigStringList BREAK_BLACKLIST = stringList("breakBlacklist")
+                .setVisible(isBreakBlacklist)
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 BREAK_CHECK_HARDNESS,
-                FAST_BREAK,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_USE_PACKET,
                 BREAK_PROGRESS_THRESHOLD,
-                BREAK_INSTANT_MINE
+                BREAK_INTERVAL,
+                BREAK_BLOCKS_PER_TICK,
+                BREAK_COOLDOWN,
+                BREAK_LIMITER,
+                BREAK_LIMIT,
+                BREAK_WHITELIST,
+                BREAK_BLACKLIST
         );
     }
 
@@ -481,27 +492,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 打印自动破坏限制器
-        public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
-                .defaultValue(ExcavateListMode.CUSTOM)
-                .build();
-
-        // 打印自动破坏限制
-        public static final ConfigOptionList BREAK_LIMIT = optionList("breakLimit")
-                .defaultValue(UsageRestriction.ListType.NONE)
-                .setVisible(isPrintBreakCustom)
-                .build();
-
-        // 打印自动破坏白名单
-        public static final ConfigStringList BREAK_WHITELIST = stringList("breakWhitelist")
-                .setVisible(isPrintBreakWhitelist)
-                .build();
-
-        // 打印自动破坏黑名单
-        public static final ConfigStringList BREAK_BLACKLIST = stringList("breakBlacklist")
-                .setVisible(isPrintBreakBlacklist)
-                .build();
-
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 PRINT_SELECTION_TYPE,
                 EASY_PLACE_PROTOCOL,
@@ -510,10 +500,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_WRONG_BLOCK,
                 BREAK_EXTRA_BLOCK,
                 BREAK_WRONG_STATE_BLOCK,
-                BREAK_LIMITER,
-                BREAK_LIMIT,
-                BREAK_WHITELIST,
-                BREAK_BLACKLIST,
                 PRINT_SKIP,
                 PRINT_SKIP_LIST,
                 PRINT_REPLACE,
@@ -559,9 +545,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 MINE_SELECTION_TYPE,          // 挖掘 - 选区类型
-                Break.BREAK_INTERVAL,         // 挖掘 - 间隔
-                Break.BREAK_BLOCKS_PER_TICK,  // 挖掘 - 每刻数量
-                Break.BREAK_COOLDOWN,         // 挖掘 - 重试冷却
                 EXCAVATE_LIMITER,             // 挖掘 - 挖掘模式限制器
                 EXCAVATE_LIMIT,               // 挖掘 - 挖掘模式限制
                 EXCAVATE_WHITELIST,           // 挖掘 - 挖掘白名单

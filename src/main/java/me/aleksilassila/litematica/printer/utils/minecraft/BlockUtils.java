@@ -16,10 +16,12 @@ public class BlockUtils {
     public static boolean checkObserverChain(SchematicBlockContext start) {
         SchematicBlockContext temp = start;
         while (temp.requiredState.getBlock() instanceof ObserverBlock) {
-            @Nullable
-            Direction tempObserverFacing = temp.requiredProperty(ObserverBlock.FACING).orElse(null);    
+            @Nullable Direction tempObserverFacing = temp.requiredProperty(ObserverBlock.FACING).orElse(null);
+            if (tempObserverFacing == null) {
+                return false;
+            }
             SchematicBlockContext offset = temp.offset(tempObserverFacing);
-            if (tempObserverFacing != null && BlockMatchResult.compare(offset) != BlockMatchResult.CORRECT) {
+            if (BlockMatchResult.compare(offset) != BlockMatchResult.CORRECT) {
                 return false;
             }
             temp = offset;

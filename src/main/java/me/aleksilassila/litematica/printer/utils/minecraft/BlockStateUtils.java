@@ -117,6 +117,12 @@ public class BlockStateUtils extends BlockUtils {
                 || blockState.getBlock() instanceof SeagrassBlock;
     }
 
+    public static boolean requiresWaterToPlace(Block block) {
+        return block instanceof SeagrassBlock
+                || block instanceof KelpBlock
+                || block instanceof KelpPlantBlock;
+    }
+
     public static boolean isCorrectWaterLevel(BlockState requiredState, BlockState currentState) {
         if (!currentState.is(Blocks.WATER)) return false;
         if (requiredState.is(Blocks.WATER) && currentState.getValue(LiquidBlock.LEVEL).equals(requiredState.getValue(LiquidBlock.LEVEL))) {

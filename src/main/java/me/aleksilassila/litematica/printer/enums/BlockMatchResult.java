@@ -26,30 +26,22 @@ public enum BlockMatchResult {
      */
     CORRECT;
 
-
-    public static BlockMatchResult compare(BlockState requiredState, BlockState currentState, Property<?>... propertiesToIgnore) {
-        // 如果两个方块状态完全相同，则返回正确状态
+    public static BlockMatchResult compare(SchematicBlockContext context, Property<?>... propertiesToIgnore) {
+        BlockState requiredState = context.requiredState;
+        BlockState currentState = context.currentState;
         if (requiredState == currentState) {
             return CORRECT;
         }
-        // 方块相同
         if (requiredState.getBlock().equals(currentState.getBlock())) {
-            // 状态不同，则返回错误状态
             if (BlockStateUtils.statesEqualIgnoreProperties(requiredState, currentState, propertiesToIgnore)) {
                 return CORRECT;
             }
             return WRONG_STATE;
         }
-        // 如果原理图中方块不为空，且实际方块为空，则返回缺失方块状态
-        if (!requiredState.isAir() && currentState.isAir()) {
+        if (!requiredState.isAir() && BlockStateUtils.isReplaceable(currentState)) {
             return MISSING;
-
         }
         return WRONG_BLOCK;
-    }
-
-    public static BlockMatchResult compare(SchematicBlockContext context, Property<?>... propertiesToIgnore) {
-        return compare(context.requiredState, context.currentState, propertiesToIgnore);
     }
 }
 

@@ -18,8 +18,6 @@
   "litematica-printer.config.bedrockBlocksPerTick.desc": "每次执行破基岩操作时可处理的基岩方块数量上限。",
   "litematica-printer.config.bedrockWhitelist": "额外目标白名单",
   "litematica-printer.config.bedrockWhitelist.desc": "额外允许进入破基岩状态机的方块列表。\n可输入方块ID或当前语言的翻译名称，示例：§bminecraft:obsidian§r §b黑曜石§r。\n前缀添加§b#§r表示标签匹配，示例：§l#minecraft:dragon_immune§r。\n同时输入文本和过滤条件(英文逗号分隔)，示例：§l深板岩,c§r。\n其中“c”表示包含匹配，优先尝试拼音或直接匹配。",
-  "litematica-printer.config.breakInstantOnSameTick": "即时挖掘 (同Tick判定)",
-  "litematica-printer.config.breakInstantOnSameTick.desc": "当挖掘进度超过 50% 时，尝试在同一个 Tick 内完成破坏，显著提升即时挖掘的响应速度。",
   "litematica-printer.config.breakInterval": "挖掘间隔时间",
   "litematica-printer.config.breakInterval.desc": "挖掘模式处理方块的间隔时间(单位为游戏刻)。\n设为0则无间隔(可能导致服务器卡顿)，建议设为1-5以平衡速度与性能。",
   "litematica-printer.config.breakLimit": "打印自动破坏限制模式",
@@ -76,8 +74,6 @@
   "litematica-printer.config.excavateListMode.tweakeroo": "Tweakeroo预设",
   "litematica-printer.config.excavateWhitelist": "自定义白名单",
   "litematica-printer.config.excavateWhitelist.desc": "仅允许挖掘此列表中的方块。\n可输入物品ID或当前语言的翻译名称，示例：§bminecraft:stone§r §b砂岩§r。\n前缀添加§b#§r表示标签匹配，示例：§l#minecraft:logs§r。\n同时输入文本和过滤条件(英文逗号分隔)，示例：§l带釉陶瓦,c§r。\n其中“c”表示包含匹配，优先尝试拼音或直接匹配。",
-  "litematica-printer.config.fastBreak": "快速破坏",
-  "litematica-printer.config.fastBreak.desc": "直接发送开始与停止破坏数据包以实现快速破坏\n(属于数据包类型，暂不支持本地预测挖掘进度)",
   "litematica-printer.config.fill": "填充",
   "litematica-printer.config.fill.desc": "在选区范围内，放置§6填充方块列表§r中配置的方块。",
   "litematica-printer.config.fillBlockList": "方块列表",
@@ -268,11 +264,5 @@
   "litematica-printer.update.recommendation": "强烈建议升级至最新版本，以修复潜在的严重问题。",
   "litematica-printer.update.repository": "代码仓库：",
   "litematica-printer.config.printBonemealCrops": "农作物催熟",
-  "litematica-printer.config.printBonemealCrops.desc": "使用骨粉催熟农作物。",
-  "litematica-printer.config.bedrockInterval": "破基岩间隔时间",
-  "litematica-printer.config.bedrockInterval.desc": "破基岩任务全局间隔时间(单位为游戏刻)。\n当间隔>0且每刻破坏数量=1时，进入严格串行：A完成并回收后等待间隔，再开始B。\n设为0则无间隔。",
-  "litematica-printer.config.bedrockBlocksPerTick": "每刻破基岩方块数",
-  "litematica-printer.config.bedrockBlocksPerTick.desc": "每次执行破基岩操作时可处理的方块数量上限。",
-  "litematica-printer.config.breakInstantOnSameTick": "即时挖掘 (同Tick判定)",
-  "litematica-printer.config.breakInstantOnSameTick.desc": "当挖掘进度超过 50% 时，尝试在同一个 Tick 内完成破坏，显著提升即时挖掘的响应速度。"
+  "litematica-printer.config.printBonemealCrops.desc": "使用骨粉催熟农作物。"
 }

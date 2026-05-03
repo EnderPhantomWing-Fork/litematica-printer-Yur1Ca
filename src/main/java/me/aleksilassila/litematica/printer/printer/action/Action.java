@@ -107,6 +107,12 @@ public class Action {
         return this;
     }
 
+    public Action setSides(Direction side, Vec3 offset) {
+        this.sides = new HashMap<>();
+        this.sides.put(side, offset);
+        return this;
+    }
+
     public Action setSides(Direction... directions) {
         Map<Direction, Vec3> sides = new HashMap<>();
         for (Direction d : directions) {

@@ -4,8 +4,10 @@ import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import lombok.Getter;
 import lombok.Setter;
+import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
+import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
@@ -22,13 +24,12 @@ import net.minecraft.world.level.block.*;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class PrintHandler extends ClientPlayerTickHandler {
     public final static String NAME = "print";
-
-    private final PlacementGuide guide;
 
     @Getter
     @Setter
@@ -44,7 +45,6 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     public PrintHandler() {
         super(NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
-        this.guide = new PlacementGuide(client);
     }
 
     public SchematicBlockContext getContext() {
@@ -87,9 +87,9 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 return false;
             }
         }
-        Action action = guide.getAction(ctx);
-        if (action == null) return false;
-        this.action = action;
+        Optional<Action> action = Guides.INSTANCE.buildAction(ctx);
+        if (action.isEmpty()) return false;
+        this.action = action.get();
         return true;
     }
 
@@ -98,10 +98,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
-                MessageUtils.setOverlayMessage("方块 " + ctx.requiredBlockName().getString() + " 下方无支撑，跳过放置");
+                MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(ctx.requiredBlockName().getString()));
                 return false;
             } else if (level.getBlockState(downPos) != ctx.schematic.getBlockState(downPos)) {
-                MessageUtils.setOverlayMessage("方块 " + ctx.requiredBlockName().getString() + " 下方方块不相符，跳过放置");
+                MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_MISMATCH.getName(ctx.requiredBlockName().getString()));
                 return false;
             }
         }
