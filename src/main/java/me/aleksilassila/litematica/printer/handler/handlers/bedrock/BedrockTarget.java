@@ -309,6 +309,23 @@ public class BedrockTarget {
         return positions;
     }
 
+    public Set<BlockPos> getStaticMachinePositions() {
+        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
+        positions.add(this.bedrockPos);
+        positions.add(this.pistonPos);
+        positions.add(this.headPos);
+        if (this.torchSupportPos != null) {
+            positions.add(this.torchSupportPos);
+        }
+        if (getTorchPos() != null) {
+            positions.add(getTorchPos());
+        }
+        if (this.slimePos != null) {
+            positions.add(this.slimePos);
+        }
+        return positions;
+    }
+
     public Set<BlockPos> getMachineFootprint() {
         LinkedHashSet<BlockPos> positions = new LinkedHashSet<>(getReservedPositions());
         positions.addAll(BedrockEnvironment.getTorchInfluencePositions(this.pistonPos));

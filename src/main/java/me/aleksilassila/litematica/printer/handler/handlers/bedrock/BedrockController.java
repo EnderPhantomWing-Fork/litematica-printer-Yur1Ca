@@ -97,6 +97,12 @@ public final class BedrockController {
         if (isTargetOnRetryCooldown(pos)) return false;
         if (countActiveTargets() >= getActiveTargetCap()) return false;
         if (isReservedByActiveTarget(pos)) return false;
+        if (!ConfigUtils.canInteracted(pos)) {
+            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                    + " reason=out_of_range_bedrock");
+            return false;
+        }
         if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
             setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
@@ -123,6 +129,14 @@ public final class BedrockController {
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
+            return false;
+        }
+        BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
+        if (outOfRangePos != null) {
+            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                    + " reason=out_of_range_machine"
+                    + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
             return false;
         }
 
@@ -295,10 +309,12 @@ public final class BedrockController {
             if (processedTargets.contains(target)) {
                 continue;
             }
-            if (!ConfigUtils.canInteracted(target.getBedrockPos())) {
+            BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
+            if (outOfRangePos != null) {
                 BedrockTarget.Status status = target.refreshStatusOnly();
                 BedrockDebugLog.write("controller out_of_range bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                        + " status=" + status);
+                        + " status=" + status
+                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
                 if (shouldRetireOutOfRange(status)) {
                     cleanupTarget(iterator, target, "out_of_range");
                 }
