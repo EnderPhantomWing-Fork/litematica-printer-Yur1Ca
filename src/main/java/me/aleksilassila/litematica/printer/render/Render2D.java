@@ -277,7 +277,7 @@ public class Render2D {
 
     private void drawProgressBar(int x, int y, int barWidth, int barHeight, double progress,
                                  Color bgColor, Color fgColor) {
-        double clampedProgress = Math.clamp(progress, 0.0, 1.0);
+        double clampedProgress = clamp(progress, 0.0, 1.0);
         int barXStart = x - (barWidth / 2);
         int barXEnd = x + (barWidth / 2);
         int barYEnd = y + barHeight;
@@ -299,5 +299,9 @@ public class Render2D {
         int totalDigits = total == 0 ? 1 : String.valueOf(total).length();
         DecimalFormat formatter = new DecimalFormat(String.format("%0" + totalDigits + "d", 0));
         return formatter.format(current);
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
