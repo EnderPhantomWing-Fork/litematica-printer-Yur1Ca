@@ -11,11 +11,15 @@ import java.nio.file.StandardOpenOption;
 
 public final class BedrockDebugLog {
     private static final Path LOG_PATH = Minecraft.getInstance().gameDirectory.toPath().resolve("logs").resolve("bedrock-printer-debug.log");
+    private static final boolean ENABLED = false;
 
     private BedrockDebugLog() {
     }
 
     public static synchronized void write(String message) {
+        if (!ENABLED) {
+            return;
+        }
         try {
             Path parent = LOG_PATH.getParent();
             if (parent != null) {
