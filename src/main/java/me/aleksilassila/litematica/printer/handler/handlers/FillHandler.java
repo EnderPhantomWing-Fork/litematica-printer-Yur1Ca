@@ -5,6 +5,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.FillBlockModeType;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
@@ -87,16 +88,6 @@ public class FillHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean shouldPauseForInventoryActivity() {
-        return true;
-    }
-
-    @Override
-    protected boolean shouldPauseForActionQueue() {
-        return true;
-    }
-
-    @Override
     public boolean canIterationBlockPos(BlockPos blockPos) {
         if (Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD) {
             ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
@@ -106,14 +97,14 @@ public class FillHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() &&
                 player.getMainHandItem().getItem() instanceof BlockItem item &&
                 item.getBlock() instanceof FallingBlock block &&
                 FallingBlock.isFree(level.getBlockState(blockPos.below()))
         ) {
-            MessageUtils.setOverlayMessage("方块 " + block.getName().getString() + " 下方无支撑，跳过放置");
-            return false;
+            MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(block.getName().getString()));
+            return;
         }
         boolean handheld = Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD;
         BlockState currentState = level.getBlockState(blockPos);
@@ -132,15 +123,12 @@ public class FillHandler extends ClientPlayerTickHandler {
                             .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
                 }
                 ActionManager.INSTANCE.setLook(action.getPlayerLook());
-                ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
                 if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook){
                     skipIteration.set(true);
                 }
                 this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
-                return true;
             }
         }
-        return false;
     }
 
 }

@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.*;
+import me.aleksilassila.litematica.printer.mixin.MinecraftAccessor;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.client.Minecraft;
@@ -26,43 +27,42 @@ public class ClientPlayerTickManager {
     @Getter
     @Setter
     private static int packetTick;
-    @Getter
-    private static long currentHandlerTime;
 
     public static final ImmutableList<ClientPlayerTickHandler> VALUES = ImmutableList.of(
             GUI, PRINT, FILL, FLUID, MINE, BEDROCK
     );
 
     public static void tick() {
+        // 本次TICK共享部分预先检查
+        if (isOpenHandler || switchItem() || InteractionUtils.INSTANCE.isNeedHandle()) {
+            return;
+        }
+        if (ActionManager.INSTANCE.needWaitModifyLook) {
+            ActionManager.INSTANCE.sendQueue(mc.player);
+            return;
+        }
         if (Configs.Core.LAG_CHECK.getBooleanValue()) {
             if (packetTick > Configs.Core.LAG_CHECK_MAX.getIntegerValue()) {
                 return;
             }
             packetTick++;
         }
-        boolean inventoryBusy = isOpenHandler || switchItem();
-        if (!inventoryBusy && mc.player != null) {
-            ActionManager.INSTANCE.sendQueue(mc.player);
-        }
         for (ClientPlayerTickHandler handler : VALUES) {
-            if (handler.shouldPauseForInventoryActivity() && inventoryBusy) {
-                continue;
-            }
-            if (handler.shouldPauseForInteractionQueue() && InteractionUtils.INSTANCE.isNeedHandle()) {
-                continue;
-            }
-            if (handler.shouldPauseForActionQueue() && ActionManager.INSTANCE.isBusy()) {
-                continue;
+            if (!(handler instanceof GuiHandler)) {
+                // 同TICK不同处理程序进行二次迭代检查, 避免独立的处理程序修改了内容没有及时跳出导致出现资源抢占问题
+                if (isOpenHandler || switchItem() || InteractionUtils.INSTANCE.isNeedHandle()) {
+                    return;
+                }
+                // 有任务需要修改视角强制退出
+                if (ActionManager.INSTANCE.needWaitModifyLook) {
+                    return;
+                }
             }
             handler.tick();
-            inventoryBusy = isOpenHandler || switchItem();
-            if (!inventoryBusy && mc.player != null) {
-                ActionManager.INSTANCE.sendQueue(mc.player);
-            }
         }
     }
 
-    public static void updateTickHandlerTime() {
-        currentHandlerTime++;
+    public static long getCurrentHandlerTime() {
+        return ((MinecraftAccessor) Minecraft.getInstance()).getClientTickCount();
     }
 }

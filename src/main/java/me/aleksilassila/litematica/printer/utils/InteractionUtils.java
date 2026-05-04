@@ -7,7 +7,6 @@ import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
-import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import me.aleksilassila.litematica.printer.utils.mods.TweakerooUtils;
 import net.fabricmc.api.EnvType;
@@ -19,8 +18,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -39,8 +36,7 @@ public class InteractionUtils {
     public static final Minecraft client = Minecraft.getInstance();
     public static final InteractionUtils INSTANCE = new InteractionUtils();
 
-    private final Deque<BlockPos> breakQueue = new ArrayDeque<>();
-    private final Set<BlockPos> queuedBreakPositions = new HashSet<>();
+    private final Queue<BlockPos> breakQueue = new LinkedList<>();
     private BlockPos breakPos;
 
     private InteractionUtils() {
@@ -91,12 +87,7 @@ public class InteractionUtils {
 
     public void add(BlockPos pos) {
         if (pos == null) return;
-        if (pos.equals(breakPos)) {
-            return;
-        }
-        if (queuedBreakPositions.add(pos)) {
-            breakQueue.addLast(pos);
-        }
+        breakQueue.add(pos);
     }
 
     public void add(SchematicBlockContext ctx) {
@@ -108,9 +99,6 @@ public class InteractionUtils {
         if (!ConfigUtils.isEnable()) {
             if (!breakQueue.isEmpty()) {
                 breakQueue.clear();
-            }
-            if (!queuedBreakPositions.isEmpty()) {
-                queuedBreakPositions.clear();
             }
             if (breakPos != null) {
                 breakPos = null;
@@ -131,59 +119,36 @@ public class InteractionUtils {
         if (breakPos == null && breakQueue.isEmpty()) {
             return;
         }
-        while (true) {
-            if (breakPos != null) {
-                if (continueDestroyBlock(breakPos, Direction.DOWN) == BlockBreakResult.IN_PROGRESS) {
-                    return;
+        if (breakPos == null) {
+            while (!breakQueue.isEmpty()) {
+                BlockPos pos = breakQueue.poll();
+                if (pos == null) {
+                    continue;
                 }
+                if (!ConfigUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
+                    continue;
+                }
+                if (ModLoadUtils.isTweakerooLoaded()) {
+                    if (TweakerooUtils.isToolSwitchEnabled()) {
+                        TweakerooUtils.trySwitchToEffectiveTool(pos);
+                    }
+                }
+                if (continueDestroyBlock(pos, Direction.DOWN) == BlockBreakResult.IN_PROGRESS) {
+                    breakPos = pos;
+                    break;
+                }
+            }
+        } else {
+            // 检查当前目标是否仍可破坏（如冰挖掘后生成水/流体，流体不可破坏）
+            if (!canBreakBlock(breakPos)) {
                 breakPos = null;
-            }
-
-            BlockPos pos = pollNextBreakPos();
-            if (pos == null) {
+                onTick();
                 return;
             }
-            if (!ConfigUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
-                continue;
+            if (continueDestroyBlock(breakPos, Direction.DOWN) != BlockBreakResult.IN_PROGRESS) {
+                breakPos = null;
+                onTick();
             }
-            if (ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isToolSwitchEnabled()) {
-                switchToBestTool(player, level.getBlockState(pos));
-            }
-            if (continueDestroyBlock(pos, Direction.DOWN) == BlockBreakResult.IN_PROGRESS) {
-                breakPos = pos;
-                return;
-            }
-        }
-    }
-
-    @Nullable
-    private BlockPos pollNextBreakPos() {
-        BlockPos pos = breakQueue.pollFirst();
-        if (pos != null) {
-            queuedBreakPositions.remove(pos);
-        }
-        return pos;
-    }
-
-    private void switchToBestTool(LocalPlayer player, BlockState blockState) {
-        Inventory inventory = player.getInventory();
-        int bestSlot = InventoryUtils.getSelectedSlot(inventory);
-        float bestSpeed = PlayerUtils.getBlockBreakingSpeed(player, blockState, player.getMainHandItem());
-
-        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            ItemStack candidate = inventory.getItem(slot);
-            if (candidate.isEmpty()) {
-                continue;
-            }
-            float speed = PlayerUtils.getBlockBreakingSpeed(player, blockState, candidate);
-            if (speed > bestSpeed) {
-                bestSpeed = speed;
-                bestSlot = slot;
-            }
-        }
-
-        if (bestSlot != InventoryUtils.getSelectedSlot(inventory)) {
-            InventoryUtils.setPickedItemToHand(bestSlot, inventory.getItem(bestSlot), client);
         }
     }
 

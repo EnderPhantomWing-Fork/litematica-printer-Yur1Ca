@@ -339,19 +339,23 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
+        // 模式限制器
         public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
                 .build();
 
+        // 模式限制
         public static final ConfigOptionList BREAK_LIMIT = optionList("breakLimit")
                 .defaultValue(UsageRestriction.ListType.NONE)
                 .setVisible(isBreakCustom)
                 .build();
 
+        // 白名单
         public static final ConfigStringList BREAK_WHITELIST = stringList("breakWhitelist")
                 .setVisible(isBreakWhitelist)
                 .build();
 
+        // 黑名单
         public static final ConfigStringList BREAK_BLACKLIST = stringList("breakBlacklist")
                 .setVisible(isBreakBlacklist)
                 .build();
@@ -360,10 +364,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_CHECK_HARDNESS,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_USE_PACKET,
-                BREAK_PROGRESS_THRESHOLD,
                 BREAK_INTERVAL,
                 BREAK_BLOCKS_PER_TICK,
                 BREAK_COOLDOWN,
+                BREAK_PROGRESS_THRESHOLD,
+                // 限制器
                 BREAK_LIMITER,
                 BREAK_LIMIT,
                 BREAK_WHITELIST,
@@ -406,11 +411,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 凭空放置
         public static final ConfigBoolean PLACE_IN_AIR = bool("placeInAir")
                 .defaultValue(true)
-                .build();
-
-        // 跳过含水方块
-        public static final ConfigBoolean SKIP_WATERLOGGED_BLOCK = bool("printSkipWaterlogged")
-                .defaultValue(false)
                 .build();
 
         // 跳过放置
@@ -504,7 +504,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SKIP_LIST,
                 PRINT_REPLACE,
                 REPLACEABLE_LIST,
-                SKIP_WATERLOGGED_BLOCK,
                 PRINT_ICE_FOR_WATER,
                 SAFELY_OBSERVER,
                 STRIP_LOGS,

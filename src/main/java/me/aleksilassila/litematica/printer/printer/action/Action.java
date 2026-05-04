@@ -20,44 +20,24 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
+@SuppressWarnings("UnusedReturnValue")
 public class Action {
     protected Map<Direction, Vec3> sides;
-
     @Nullable
     @Getter
     protected PlayerLook playerLook = null;
-
     @Nullable
     protected Item[] clickItems; // null == 空手
     protected boolean requiresSupport = false;
-
     @Getter
     @Nullable
     protected Boolean shift = null;
-
-    @Getter
-    protected int waitTick = 0;     // 会占用其他任务
-
-    protected boolean needWaitModifyLook = false;
-
-    public boolean isNeedWaitModifyLook() {
-        return needWaitModifyLook;
-    }
-
-    public boolean getNeedWaitModifyLook() {
-        return needWaitModifyLook;
-    }
 
     public Action() {
         this.sides = new HashMap<>();
         for (Direction direction : Direction.values()) {
             sides.put(direction, new Vec3(0, 0, 0));
         }
-    }
-
-    public Action setLookYawPitch(float lookYaw, float lookPitch) {
-        this.playerLook = new PlayerLook(lookYaw, lookPitch);
-        return this;
     }
 
     public Action setLookRotation(int lookRotation) {
@@ -178,16 +158,6 @@ public class Action {
 
     public Action setShift() {
         return this.setShift(true);
-    }
-
-    public Action setWaitTick(int waitTick) {
-        this.waitTick = waitTick;
-        return this;
-    }
-
-    public Action setNeedWaitModifyLook(boolean needWaitModifyLook) {
-        this.needWaitModifyLook = needWaitModifyLook;
-        return this;
     }
 
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {

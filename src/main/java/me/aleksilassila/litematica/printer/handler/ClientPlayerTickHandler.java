@@ -122,11 +122,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         }
         // 更新迭代范围
         if (this.playerInteractionBox != null) {
-            //#if MC > 11802
-            BlockPos playerPos = new BlockPos((int) Math.round(player.getX()), (int) Math.round(player.getEyeY()), (int) Math.round(player.getZ()));
-            //#else
-            //$$ BlockPos playerPos = new BlockPos((int) Math.round(player.getX()), (int) Math.round(player.getY() + 1.5), (int) Math.round(player.getZ()));
-            //#endif
+            BlockPos playerPos = this.player.blockPosition();
             double threshold = getWorkRange() * 0.7; // 玩家移动阈值：工作范围的70%
             @Nullable PrinterBox playerInteractionBox = this.playerInteractionBox.get();
             if (playerInteractionBox == null
@@ -174,7 +170,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                         interrupt = true;
                         break;
                     }
-                    if (this.skipIteration.get() || this.shouldPauseForActionQueue() && ActionManager.INSTANCE.isBusy()) {
+                    if (this.skipIteration.get() || ActionManager.INSTANCE.needWaitModifyLook) {
                         interrupt = true;
                         break;
                     }
@@ -210,12 +206,9 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                     gui.posInSelectionRange = true;
                     // 方块迭代权限校验：子类可重写实现自定义过滤逻辑
                     if (this.canIterationBlockPos(pos) && !isBlockPosOnCooldown(pos)) {
-                        boolean executed = this.executeIteration(pos, this.skipIteration);
-                        gui.execute = executed;
-                        if (executed && maxEffectiveExec > 0) {
-                            effectiveExecCount++;
-                        }
-                        if (this.skipIteration.get() || maxEffectiveExec > 0 && effectiveExecCount >= maxEffectiveExec) {
+                        this.executeIteration(pos, this.skipIteration);
+                        gui.execute = true;
+                        if (this.skipIteration.get() || maxEffectiveExec > 0 && ++effectiveExecCount >= maxEffectiveExec) {
                             interrupt = true;
                         }
                     }
@@ -324,24 +317,11 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         return true;
     }
 
-    protected boolean shouldPauseForInventoryActivity() {
-        return false;
-    }
-
-    protected boolean shouldPauseForInteractionQueue() {
-        return false;
-    }
-
-    protected boolean shouldPauseForActionQueue() {
-        return false;
-    }
-
     public boolean canIterationBlockPos(BlockPos pos) {
         return true;
     }
 
-    protected boolean executeIteration(BlockPos pos, AtomicReference<Boolean> skipIteration) {
-        return false;
+    protected void executeIteration(BlockPos pos, AtomicReference<Boolean> skipIteration) {
     }
 
     public boolean isBlockPosOnCooldown(@Nullable BlockPos pos) {

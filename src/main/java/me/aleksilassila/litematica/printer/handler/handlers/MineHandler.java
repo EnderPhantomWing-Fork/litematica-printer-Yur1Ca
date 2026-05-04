@@ -28,6 +28,9 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     public static boolean mineRestriction(BlockState blockState) {
+        if (!InteractionUtils.breakRestriction(blockState)) {
+            return false;
+        }
         if (Configs.Mine.EXCAVATE_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             if (!ModLoadUtils.isTweakerooLoaded()) return true;
             UsageRestriction.ListType listType = BLOCK_TYPE_BREAK_RESTRICTION.getListType();
@@ -65,11 +68,6 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean shouldPauseForInteractionQueue() {
-        return true;
-    }
-
-    @Override
     public boolean canIterationBlockPos(BlockPos pos) {
         if (isBlockPosOnCooldown(pos) || CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
             return false;
@@ -78,14 +76,11 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlock(blockPos);
-        if (result != BlockBreakResult.FAILED) {
-            this.setBlockPosCooldown(blockPos, getBreakCooldown());
-        }
+        this.setBlockPosCooldown(blockPos, getBreakCooldown());
         if (result == BlockBreakResult.IN_PROGRESS) {
             skipIteration.set(true);    // 本 TICK 退出剩下位置迭代
         }
-        return result != BlockBreakResult.FAILED;
     }
 }

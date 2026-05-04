@@ -7,14 +7,11 @@ import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.LiquidBlock;
 
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class GuiHandler extends ClientPlayerTickHandler {
@@ -38,13 +35,18 @@ public class GuiHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+    protected boolean isSchematicBlockHandler() {
+        return ConfigUtils.isPrintMode();
+    }
+
+    @Override
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (ConfigUtils.isPrintMode()) {
             WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
             if (schematic != null) {
                 SchematicBlockContext context = new SchematicBlockContext(client, level, schematic, blockPos);
                 if (!context.requiredState.isAir()) {
-                    if (BlockMatchResult.compare(context) == BlockMatchResult.CORRECT) {
+                    if (BlockMatchResult.compare(context) != BlockMatchResult.MISSING) {
                         printProgress.finished++;
                         totalProgress.finished++;
                     }
@@ -80,7 +82,6 @@ public class GuiHandler extends ClientPlayerTickHandler {
         for (Progress progress : progresses) {
             progress.calculateProgress();
         }
-        return true;
     }
 
     @Override

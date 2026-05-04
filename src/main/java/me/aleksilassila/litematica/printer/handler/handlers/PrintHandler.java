@@ -4,11 +4,11 @@ import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import lombok.Getter;
 import lombok.Setter;
-import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -67,16 +67,6 @@ public class PrintHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean shouldPauseForInventoryActivity() {
-        return true;
-    }
-
-    @Override
-    protected boolean shouldPauseForActionQueue() {
-        return true;
-    }
-
-    @Override
     public boolean canIterationBlockPos(BlockPos blockPos) {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
@@ -87,28 +77,30 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 return false;
             }
         }
+//        Action action = guide.getAction(ctx);
         Optional<Action> action = Guides.INSTANCE.buildAction(ctx);
-        if (action.isEmpty()) return false;
+        if (action.isEmpty())
+            return false;
         this.action = action.get();
         return true;
     }
 
     @Override
-    protected boolean executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(ctx.requiredBlockName().getString()));
-                return false;
+                return;
             } else if (level.getBlockState(downPos) != ctx.schematic.getBlockState(downPos)) {
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_MISMATCH.getName(ctx.requiredBlockName().getString()));
-                return false;
+                return;
             }
         }
         Direction side = action.getValidSide(level, blockPos);
-        if (side == null) return false;
+        if (side == null) return;
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
-        if (!InventoryUtils.switchToItems(player, reqItems)) return false;
+        if (!InventoryUtils.switchToItems(player, reqItems)) return;
         boolean useShift;
         if (action.getShift() == null) {
             useShift = (Implementation.isInteractive(level.getBlockState(blockPos.relative(side)).getBlock()) && !(action instanceof ClickAction))
@@ -123,12 +115,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
             ActionManager.INSTANCE.useProtocol = true;
         }
         ActionManager.INSTANCE.setLook(action.getPlayerLook());
-        ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
         if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
             skipIteration.set(true);
         }
         setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
-        return true;
     }
 }
 

@@ -77,33 +77,20 @@ public class FluidHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean shouldPauseForInventoryActivity() {
-        return true;
-    }
-
-    @Override
-    protected boolean shouldPauseForActionQueue() {
-        return true;
-    }
-
-    @Override
-    protected boolean executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         FluidState fluidState = level.getBlockState(blockPos).getFluidState();
         if (fluids.contains(fluidState.getType())) {
             if (!Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() && !fluidState.isSource()) {
-                return false;
+                return;
             }
             if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
-                return false;
+                return;
             }
-            Action action = new Action().queueAction(blockPos, Direction.UP, false, player);
-            ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
+            new Action().queueAction(blockPos, Direction.UP, false, player);
             if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
                 skipIteration.set(true);
             }
             setBlockPosCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
-            return true;
         }
-        return false;
     }
 }

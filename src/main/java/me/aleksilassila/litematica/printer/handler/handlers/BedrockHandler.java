@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTargetBlocks;
+import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.core.BlockPos;
 
@@ -18,8 +19,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getTickInterval() {
-        // Bedrock interval is handled in BedrockController as "next target delay".
-        // The state machine itself must run every tick.
         return 0;
     }
 
@@ -31,7 +30,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean canExecute() {
         if (player.isCreative()) {
-            MessageUtils.setOverlayMessage("创造模式无法使用破基岩模式！");
+            MessageUtils.setOverlayMessage(I18n.BEDROCK_CREATIVE_MODE.getName());
             return false;
         }
         String warning = BedrockInventory.warningMessage();
@@ -49,11 +48,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean shouldPauseForInventoryActivity() {
-        return true;
-    }
-
-    @Override
     public boolean canIterationBlockPos(BlockPos pos) {
         if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos))) {
             return false;
@@ -62,11 +56,13 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     }
 
     @Override
-    protected boolean executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(blockPos))) {
-            return false;
+            return;
         }
-        return BedrockController.submit(blockPos);
+        if (BedrockController.submit(blockPos)) {
+            skipIteration.set(true);
+        }
     }
 
     @Override

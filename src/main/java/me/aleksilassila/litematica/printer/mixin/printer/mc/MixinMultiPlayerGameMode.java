@@ -20,6 +20,7 @@ import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -143,10 +144,10 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             return BlockBreakResult.COMPLETED;
         }
         if (this.hasDelayedDestroy) {
-            BlockState delayedState = level.getBlockState(this.delayedDestroyPos);
+            BlockState blockState2 = minecraft.level.getBlockState(this.delayedDestroyPos);
             long currentTick = getClientTickCount();
             int elapsedTicks = (int) (currentTick - this.delayedDestroyStartTick);
-            float delayedDestroyProgress = delayedState.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsedTicks;
+            float delayedDestroyProgress = blockState2.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsedTicks;
             if (delayedDestroyProgress >= 1.0F) {
                 this.destroyBlock(this.delayedDestroyPos);
                 this.hasDelayedDestroy = false;
@@ -181,9 +182,8 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             }
             return BlockBreakResult.COMPLETED;
         }
-
         if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
-            return this.isDestroying ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
+            return isDestroying ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
         }
         if (this.isDestroying && !blockPos.equals(this.destroyBlockPos)) {
             NetworkUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, this.destroyBlockPos, direction, 0));
@@ -236,17 +236,19 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                         return getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence);
                     });
                     return BlockBreakResult.COMPLETED;
+                } else {
+                    // 发送STOP让服务端当前处理位置状态转移到延迟破坏位置中
+                    NetworkUtils.sendPacket(sequence -> {
+                        this.hasDelayedDestroy = true;
+                        this.delayedDestroyPos = blockPos;
+                        this.delayedDestroyStartTick = getClientTickCount();
+                        this.isDestroying = false;
+                        this.destroyProgress = 0.0F;
+                        return getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence);
+                    });
+                    level.destroyBlockProgress(player.getId(), blockPos, this.litematica_printer$getDestroyStage());
+                    return this.isDestroying ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
                 }
-                NetworkUtils.sendPacket(sequence -> {
-                    this.hasDelayedDestroy = true;
-                    this.delayedDestroyPos = blockPos;
-                    this.delayedDestroyStartTick = getClientTickCount();
-                    this.isDestroying = false;
-                    this.destroyProgress = 0.0F;
-                    return getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence);
-                });
-                level.destroyBlockProgress(player.getId(), blockPos, this.litematica_printer$getDestroyStage());
-                return this.isDestroying ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
             }
             this.isDestroying = true;
             this.destroyBlockPos = blockPos;

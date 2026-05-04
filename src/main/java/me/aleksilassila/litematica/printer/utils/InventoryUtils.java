@@ -101,7 +101,7 @@ public class InventoryUtils {
 
     public static void setHotbarSlot(int slot, Inventory inventory) {
         boolean usePacket = Configs.Placement.PRINT_USE_PACKET.getBooleanValue();
-        if (usePacket && getSelectedSlot(inventory) != slot) {
+        if (usePacket) {
             client.getConnection().send(new ServerboundSetCarriedItemPacket(slot));
         }
         setSelectedSlot(inventory, slot);

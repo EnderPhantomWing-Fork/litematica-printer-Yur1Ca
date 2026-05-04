@@ -10,6 +10,7 @@ public class Implementation {
     public static Class<?>[] interactiveBlocks = {
             AbstractFurnaceBlock.class,     // 熔炉/烟熏炉/高炉
             CraftingTableBlock.class,       // 工作台
+            ChestBlock.class,               // 箱子
             LeverBlock.class,               // 拉杆
             DoorBlock.class,                // 门
             TrapDoorBlock.class,            // 活板门
@@ -41,7 +42,6 @@ public class Implementation {
             CartographyTableBlock.class,    // 制图台
             GrindstoneBlock.class,          // 砂轮
             StonecutterBlock.class,         // 切石机
-            ChestBlock.class,               // 箱子
             //#if MC < 12109
             //$$ FletchingTableBlock.class, // 制箭台
             //#endif
@@ -50,9 +50,7 @@ public class Implementation {
             //#if MC >= 12003
             CrafterBlock.class,             // 合成器（自动合成台）
             //#endif
-            //#if MC > 12004
-            VaultBlock.class                // 宝库
-            //#endif
+            SignBlock.class,                // 告示牌（右键打开编辑界面）
     };
 
     /**

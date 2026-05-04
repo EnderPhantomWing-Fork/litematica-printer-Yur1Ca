@@ -12,6 +12,12 @@ public class DirectionUtils {
     private static final int ROTATION_MAX = 15;
     private static final float ROTATION_TO_YAW_FACTOR = 22.5F;
 
+    private static final float[] SIN = Util.make(new float[65536], fs -> {
+        for (int ix = 0; ix < fs.length; ix++) {
+            fs[ix] = (float) Math.sin(ix / 10430.378350470453);
+        }
+    });
+
     public static float getRequiredYaw(Direction playerShouldBeFacing) {
         if (playerShouldBeFacing != null && playerShouldBeFacing.getAxis().isHorizontal()) {
             return playerShouldBeFacing.toYRot();
@@ -36,13 +42,21 @@ public class DirectionUtils {
         //#endif
     }
 
+    public static float sin(double d) {
+        return SIN[(int) ((long) (d * 10430.378350470453) & 65535L)];
+    }
+
+    public static float cos(double d) {
+        return SIN[(int) ((long) (d * 10430.378350470453 + 16384.0) & 65535L)];
+    }
+
     public static Direction[] orderedByNearest(float yaw, float pitch) {
         double pitchRad = pitch * (Math.PI / 180.0);
         double yawRad = -yaw * (Math.PI / 180.0);
-        float sinPitch = (float) Math.sin(pitchRad);
-        float cosPitch = (float) Math.cos(pitchRad);
-        float sinYaw = (float) Math.sin(yawRad);
-        float cosYaw = (float) Math.cos(yawRad);
+        float sinPitch = sin(pitchRad);
+        float cosPitch = cos(pitchRad);
+        float sinYaw = sin(yawRad);
+        float cosYaw = cos(yawRad);
         boolean isEastFacing = sinYaw > 0.0F;
         boolean isUpFacing = sinPitch < 0.0F;
         boolean isSouthFacing = cosYaw > 0.0F;
