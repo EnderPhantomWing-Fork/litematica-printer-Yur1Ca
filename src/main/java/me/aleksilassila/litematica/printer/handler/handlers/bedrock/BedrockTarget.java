@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -16,6 +17,8 @@ public class BedrockTarget {
     private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
     private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
     private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
+    private static final int POST_EXECUTE_RESIDUE_CLEANUP_INTERVAL_TICKS = 4;
+    private static final int POLLUTED_MACHINE_CLEANUP_INTERVAL_TICKS = 4;
     private static final int POWERED_STALL_REBUILD_LIMIT = 3;
 
     public enum Status {
@@ -46,8 +49,12 @@ public class BedrockTarget {
     private int poweredStallRebuildCount;
     private int executeTick = -1;
     private int initializeTick = -1;
+    private int lastPostExecuteResidueCleanupTick = -1;
+    private int lastPollutedMachineCleanupTick = -1;
     private boolean executedThisTick;
     private boolean initializedThisTick;
+    private boolean throughputConsumedThisTick;
+    private String throughputActionThisTick;
     private Status status = Status.UNINITIALIZED;
     private Status lastLoggedStatus;
     public final Set<BlockPos> tempBlocks = new LinkedHashSet<>();
@@ -130,6 +137,8 @@ public class BedrockTarget {
     public Status tick(boolean allowExecute, boolean allowInitialize) {
         this.executedThisTick = false;
         this.initializedThisTick = false;
+        this.throughputConsumedThisTick = false;
+        this.throughputActionThisTick = null;
         
         // Only increment tick counter if we are actually doing something or waiting for sync.
         // This prevents tasks from failing while they are just queued in the controller.
@@ -173,6 +182,7 @@ public class BedrockTarget {
                         + " torch=" + BedrockDebugLog.pos(getTorchPos()));
                 this.initializeTick = this.tickTimes;
                 this.initializedThisTick = true;
+                markThroughputAction("initialize");
             }
             case EXTENDED -> {
                 if (!allowExecute) {
@@ -196,6 +206,7 @@ public class BedrockTarget {
                 this.hasTried = true;
                 this.executeTick = this.tickTimes;
                 this.executedThisTick = true;
+                markThroughputAction("execute");
                 BedrockDebugLog.write("target execute bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                         + " piston=" + BedrockDebugLog.pos(this.pistonPos)
                         + " torches=" + BedrockEnvironment.findNearbyRedstoneTorches(level, pistonPos).size()
@@ -257,8 +268,11 @@ public class BedrockTarget {
                     break;
                 }
 
+                this.initializeTick = this.tickTimes;
+                this.initializedThisTick = true;
                 this.lastRepowerTick = this.tickTimes;
                 this.poweredStallRebuildCount++;
+                markThroughputAction("powered_stall_rebuild");
                 BedrockDebugLog.write("target powered stall rebuild bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                         + " piston=" + BedrockDebugLog.pos(this.pistonPos)
                         + " torchSupport=" + BedrockDebugLog.pos(this.torchSupportPos)
@@ -292,12 +306,26 @@ public class BedrockTarget {
         return this.initializedThisTick;
     }
 
+    public boolean consumedThroughputThisTick() {
+        return this.throughputConsumedThisTick;
+    }
+
+    public String getThroughputActionThisTick() {
+        return this.throughputActionThisTick == null ? "unknown" : this.throughputActionThisTick;
+    }
+
     public Set<BlockPos> getCleanupPositions() {
         LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
         positions.add(this.pistonPos);
         positions.add(this.headPos);
+        if (hasCleanupResidue(this.torchSupportPos)) {
+            positions.add(this.torchSupportPos);
+        }
         if (this.slimePos != null) {
             positions.add(this.slimePos);
+        }
+        if (hasCleanupResidue(getTorchPos())) {
+            positions.add(getTorchPos());
         }
         positions.addAll(this.tempBlocks);
         return positions;
@@ -410,6 +438,7 @@ public class BedrockTarget {
             return false;
         }
         this.lastRepowerTick = this.tickTimes;
+        markThroughputAction("repower");
         BedrockDebugLog.write("target repower bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                 + " torchSupport=" + BedrockDebugLog.pos(this.torchSupportPos)
                 + " torch=" + BedrockDebugLog.pos(getTorchPos())
@@ -443,6 +472,7 @@ public class BedrockTarget {
     private void updateStatus() {
         if (this.tickTimes > 40) {
             this.status = Status.FAILED;
+            logInteractionSnapshot("failed_timeout_guard");
             return;
         }
 
@@ -484,6 +514,7 @@ public class BedrockTarget {
                         if (!level.getBlockState(this.slimePos).is(Blocks.SLIME_BLOCK)) {
                             BedrockPlacer.placeSimple(this.slimePos, Direction.UP, Blocks.SLIME_BLOCK.asItem());
                             recordTemp(this.slimePos);
+                            markThroughputAction("materialize_slime_support");
                             BedrockDebugLog.write("target materialized slime support bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                                     + " slime=" + BedrockDebugLog.pos(this.slimePos)
                                     + " tick=" + this.tickTimes);
@@ -525,7 +556,21 @@ public class BedrockTarget {
                 BedrockDebugLog.write("target sync timeout bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                         + " tick=" + this.tickTimes
                         + " executeTick=" + this.executeTick
-                        + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos)));
+                        + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos))
+                        + " interaction=" + buildInteractionSnapshot());
+            }
+            return;
+        }
+        if (this.hasTried && shouldRestartAfterPostExecuteCollapse()) {
+            resetPostExecuteAttempt("post_execute_collapse_recover", Status.UNINITIALIZED);
+            this.status = Status.UNINITIALIZED;
+            return;
+        }
+        if (hasPollutedMachineState()) {
+            cleanupPollutedMachineState();
+            this.status = Status.NEEDS_WAITING;
+            if (this.hasTried) {
+                this.stuckTicksCounter++;
             }
             return;
         }
@@ -545,17 +590,15 @@ public class BedrockTarget {
             this.status = Status.EXTENDED;
             return;
         }
-        if (shouldWaitForPostExecuteAirTransition()) {
+        if (shouldCleanupStablePostExecuteResidue()) {
+            cleanupStablePostExecuteResidue();
             this.status = Status.NEEDS_WAITING;
             this.stuckTicksCounter++;
             return;
         }
-        if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
-            this.status = Status.UNINITIALIZED;
-            this.hasTried = false;
-            this.stuckTicksCounter = 0;
-            this.poweredStallRebuildCount = 0;
-            this.executeTick = -1;
+        if (shouldWaitForPostExecuteAirTransition()) {
+            this.status = Status.NEEDS_WAITING;
+            this.stuckTicksCounter++;
             return;
         }
         if (this.hasTried
@@ -568,10 +611,7 @@ public class BedrockTarget {
             } else {
                 this.status = Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
             }
-            this.hasTried = false;
-            this.stuckTicksCounter = 0;
-            this.poweredStallRebuildCount = 0;
-            this.executeTick = -1;
+            clearPostExecuteAttemptState();
             return;
         }
         if (this.hasTried && (level.getBlockState(this.pistonPos).is(Blocks.PISTON) || level.getBlockState(this.pistonPos).isAir()) && this.stuckTicksCounter < 15) {
@@ -593,6 +633,10 @@ public class BedrockTarget {
             this.status = Status.NEEDS_WAITING;
             return;
         }
+        if (!this.hasTried && hasAnyTransientMachineResidue()) {
+            this.status = Status.NEEDS_WAITING;
+            return;
+        }
         if (BedrockEnvironment.hasRoomForPiston(this.level, this.pistonPos, this.layout.getPistonOffset())) {
             this.status = Status.UNINITIALIZED;
             return;
@@ -604,6 +648,7 @@ public class BedrockTarget {
             return;
         }
         this.status = Status.FAILED;
+        logInteractionSnapshot("failed_invalid_piston_state");
         BedrockMessages.actionBar("bedrockminer.fail.place.piston");
     }
 
@@ -630,6 +675,12 @@ public class BedrockTarget {
             }
             return Status.STUCK;
         }
+        if (shouldRestartAfterPostExecuteCollapse()) {
+            return Status.UNINITIALIZED;
+        }
+        if (hasPollutedMachineState()) {
+            return Status.NEEDS_WAITING;
+        }
         if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
             return Status.NEEDS_WAITING;
         }
@@ -641,11 +692,14 @@ public class BedrockTarget {
         if (level.getBlockState(this.pistonPos).is(Blocks.PISTON) && level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.EXTENDED)) {
             return Status.EXTENDED;
         }
-        if (shouldWaitForPostExecuteAirTransition()) {
+        if (shouldRestartAfterPostExecuteCollapse()) {
+            return Status.UNINITIALIZED;
+        }
+        if (shouldCleanupStablePostExecuteResidue()) {
             return Status.NEEDS_WAITING;
         }
-        if (this.hasTried && level.getBlockState(this.pistonPos).isAir() && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD)) {
-            return Status.UNINITIALIZED;
+        if (shouldWaitForPostExecuteAirTransition()) {
+            return Status.NEEDS_WAITING;
         }
         if (this.hasTried
                 && level.getBlockState(this.pistonPos).is(Blocks.PISTON)
@@ -670,6 +724,9 @@ public class BedrockTarget {
         if (shouldWaitForInitializeSettle()) {
             return Status.NEEDS_WAITING;
         }
+        if (!this.hasTried && hasAnyTransientMachineResidue()) {
+            return Status.NEEDS_WAITING;
+        }
         if (BedrockEnvironment.hasRoomForPiston(this.level, this.pistonPos, this.layout.getPistonOffset())) {
             return Status.UNINITIALIZED;
         }
@@ -686,6 +743,27 @@ public class BedrockTarget {
                 && this.executeTick >= 0
                 && this.tickTimes - this.executeTick >= POST_EXECUTE_SYNC_TIMEOUT_TICKS
                 && (level.getBlockState(this.pistonPos).isAir() || hasPostExecuteSyncResidue());
+    }
+
+    private boolean shouldRestartAfterPostExecuteCollapse() {
+        if (!isPostExecuteCollapsed() || this.executeTick < 0) {
+            return false;
+        }
+        if (this.tickTimes - this.executeTick < POST_EXECUTE_AIR_SETTLE_TICKS) {
+            return false;
+        }
+        if (hasStablePostExecuteResidue()) {
+            return false;
+        }
+        return BedrockEnvironment.hasRoomForPiston(this.level, this.pistonPos, this.layout.getPistonOffset());
+    }
+
+    private boolean shouldCleanupStablePostExecuteResidue() {
+        return isPostExecuteCollapsed()
+                && this.executeTick >= 0
+                && this.tickTimes - this.executeTick >= POST_EXECUTE_AIR_SETTLE_TICKS
+                && this.tickTimes - this.executeTick < POST_EXECUTE_SYNC_TIMEOUT_TICKS
+                && hasStablePostExecuteResidue();
     }
 
     private boolean shouldWaitForPostExecuteAirTransition() {
@@ -714,6 +792,9 @@ public class BedrockTarget {
     private Status getRecoverablePostExecuteStatus() {
         if (!this.hasTried || this.executeTick < 0) {
             return null;
+        }
+        if (shouldRestartAfterPostExecuteCollapse()) {
+            return Status.UNINITIALIZED;
         }
         return getRecoverableUnextendedStatus();
     }
@@ -748,15 +829,25 @@ public class BedrockTarget {
     }
 
     private void resetPostExecuteAttempt(String reason, Status recoveryStatus) {
-        this.hasTried = false;
-        this.stuckTicksCounter = 0;
-        this.poweredStallRebuildCount = 0;
-        this.executeTick = -1;
+        clearPostExecuteAttemptState();
         BedrockDebugLog.write("target recover bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                 + " tick=" + this.tickTimes
                 + " status=" + recoveryStatus
                 + " reason=" + reason
-                + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos)));
+                + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos))
+                + " interaction=" + buildInteractionSnapshot());
+    }
+
+    private void clearPostExecuteAttemptState() {
+        this.tickTimes = 0;
+        this.hasTried = false;
+        this.stuckTicksCounter = 0;
+        this.poweredStallRebuildCount = 0;
+        this.executeTick = -1;
+        this.initializeTick = -1;
+        this.lastRepowerTick = -1;
+        this.lastPostExecuteResidueCleanupTick = -1;
+        this.lastPollutedMachineCleanupTick = -1;
     }
 
     private boolean hasMachineCleanupResidue() {
@@ -770,9 +861,64 @@ public class BedrockTarget {
         return hasCleanupResidue(this.pistonPos) || hasCleanupResidue(this.headPos);
     }
 
+    private boolean isPostExecuteCollapsed() {
+        return this.hasTried
+                && level.getBlockState(this.pistonPos).isAir()
+                && !level.getBlockState(this.headPos).is(Blocks.PISTON_HEAD);
+    }
+
     private boolean hasTransientMachineResidue() {
         return isTransientMachineResidue(this.pistonPos, false)
                 || isTransientMachineResidue(this.headPos, true);
+    }
+
+    private boolean hasAnyTransientMachineResidue() {
+        return isTransientMachineResidue(this.pistonPos, false)
+                || isTransientMachineResidue(this.headPos, true)
+                || isTransientMachineResidue(this.torchSupportPos, false)
+                || isTransientMachineResidue(this.slimePos, false);
+    }
+
+    private boolean hasStablePostExecuteResidue() {
+        return isStablePostExecuteResidue(this.pistonPos, false)
+                || isStablePostExecuteResidue(this.headPos, true);
+    }
+
+    private boolean isStablePostExecuteResidue(BlockPos pos, boolean headSlot) {
+        if (pos == null) {
+            return false;
+        }
+        var state = level.getBlockState(pos);
+        return BedrockTargetBlocks.isCleanupResidue(state) && !isTransientMachineResidue(pos, headSlot);
+    }
+
+    private void cleanupStablePostExecuteResidue() {
+        if (this.lastPostExecuteResidueCleanupTick >= 0
+                && this.tickTimes - this.lastPostExecuteResidueCleanupTick < POST_EXECUTE_RESIDUE_CLEANUP_INTERVAL_TICKS) {
+            return;
+        }
+
+        boolean headResidue = isStablePostExecuteResidue(this.headPos, true);
+        boolean pistonResidue = isStablePostExecuteResidue(this.pistonPos, false);
+        if (!headResidue && !pistonResidue) {
+            return;
+        }
+
+        this.lastPostExecuteResidueCleanupTick = this.tickTimes;
+        if (headResidue) {
+            BedrockBreaker.breakBlock(this.headPos, false);
+        }
+        if (pistonResidue) {
+            BedrockBreaker.breakBlock(this.pistonPos, false);
+        }
+        markThroughputAction("residue_cleanup");
+        BedrockDebugLog.write("target residue cleanup bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                + " tick=" + this.tickTimes
+                + " headResidue=" + headResidue
+                + " pistonResidue=" + pistonResidue
+                + " headState=" + BedrockDebugLog.describeState(level.getBlockState(this.headPos))
+                + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos))
+                + " interaction=" + buildInteractionSnapshot());
     }
 
     private boolean isTransientMachineResidue(BlockPos pos, boolean headSlot) {
@@ -784,6 +930,9 @@ public class BedrockTarget {
         if (state.isAir()) {
             return false;
         }
+        if (state.is(Blocks.MOVING_PISTON)) {
+            return true;
+        }
         if (headSlot && state.is(Blocks.PISTON_HEAD)) {
             return true;
         }
@@ -794,14 +943,141 @@ public class BedrockTarget {
                 if (validFacing && !state.getValue(PistonBaseBlock.EXTENDED)) {
                     return false;
                 }
+                return true;
             }
-            return true;
         }
-        return BedrockTargetBlocks.isCleanupResidue(state);
+        return false;
     }
 
     private boolean hasCleanupResidue(BlockPos pos) {
         return pos != null && BedrockTargetBlocks.isCleanupResidue(level.getBlockState(pos));
+    }
+
+    private boolean hasPollutedMachineState() {
+        return isPollutedPistonState()
+                || isPollutedHeadState()
+                || isPollutedTorchSupportState()
+                || isPollutedTorchState()
+                || isPollutedSlimeSupportState();
+    }
+
+    private boolean isPollutedPistonState() {
+        var state = level.getBlockState(this.pistonPos);
+        if (state.isAir() || state.is(Blocks.MOVING_PISTON)) {
+            return false;
+        }
+        if (state.is(Blocks.PISTON)) {
+            return false;
+        }
+        return BedrockTargetBlocks.isCleanupResidue(state);
+    }
+
+    private boolean isPollutedHeadState() {
+        var state = level.getBlockState(this.headPos);
+        if (state.isAir() || state.is(Blocks.MOVING_PISTON) || state.is(Blocks.PISTON_HEAD)) {
+            return false;
+        }
+        if (this.hasTried && this.executeTick >= 0 && this.tickTimes - this.executeTick < POST_EXECUTE_SYNC_TIMEOUT_TICKS) {
+            if (state.is(Blocks.PISTON)) {
+                return false;
+            }
+        }
+        return BedrockTargetBlocks.isCleanupResidue(state);
+    }
+
+    private boolean isPollutedTorchState() {
+        BlockPos torchPos = getTorchPos();
+        if (torchPos == null) {
+            return false;
+        }
+        var state = level.getBlockState(torchPos);
+        if (state.isAir()) {
+            return false;
+        }
+        if (isExpectedTorchState(state)) {
+            return false;
+        }
+        return BedrockTargetBlocks.isCleanupResidue(state);
+    }
+
+    private boolean isPollutedTorchSupportState() {
+        if (this.torchSupportPos == null) {
+            return false;
+        }
+        if (this.slimePos != null && this.torchSupportPos.equals(this.slimePos)) {
+            return false;
+        }
+        var state = level.getBlockState(this.torchSupportPos);
+        if (state.isAir()) {
+            return false;
+        }
+        return BedrockTargetBlocks.isCleanupResidue(state);
+    }
+
+    private boolean isExpectedTorchState(net.minecraft.world.level.block.state.BlockState state) {
+        if (this.torchPlacement == null || this.torchPlacement.getClickedFace() == null) {
+            return false;
+        }
+        Direction clickedFace = this.torchPlacement.getClickedFace();
+        if (clickedFace == Direction.UP) {
+            return state.is(Blocks.REDSTONE_TORCH);
+        }
+        return state.is(Blocks.REDSTONE_WALL_TORCH);
+    }
+
+    private boolean isPollutedSlimeSupportState() {
+        if (this.slimePos == null) {
+            return false;
+        }
+        var state = level.getBlockState(this.slimePos);
+        if (state.isAir() || state.is(Blocks.SLIME_BLOCK)) {
+            return false;
+        }
+        return BedrockTargetBlocks.isCleanupResidue(state);
+    }
+
+    private void cleanupPollutedMachineState() {
+        if (this.lastPollutedMachineCleanupTick >= 0
+                && this.tickTimes - this.lastPollutedMachineCleanupTick < POLLUTED_MACHINE_CLEANUP_INTERVAL_TICKS) {
+            return;
+        }
+
+        boolean pollutedPiston = isPollutedPistonState();
+        boolean pollutedHead = isPollutedHeadState();
+        boolean pollutedTorchSupport = isPollutedTorchSupportState();
+        boolean pollutedTorch = isPollutedTorchState();
+        boolean pollutedSlime = isPollutedSlimeSupportState();
+        if (!pollutedPiston && !pollutedHead && !pollutedTorchSupport && !pollutedTorch && !pollutedSlime) {
+            return;
+        }
+
+        this.lastPollutedMachineCleanupTick = this.tickTimes;
+
+        if (pollutedTorch) {
+            BedrockBreaker.breakBlock(getTorchPos(), false);
+        }
+        if (pollutedHead) {
+            BedrockBreaker.breakBlock(this.headPos, false);
+        }
+        if (pollutedPiston) {
+            BedrockBreaker.breakBlock(this.pistonPos, false);
+        }
+        if (pollutedTorchSupport) {
+            BedrockBreaker.breakBlock(this.torchSupportPos, false);
+        }
+        if (pollutedSlime) {
+            BedrockBreaker.breakBlock(this.slimePos, false);
+        }
+
+        markThroughputAction("pollution_cleanup");
+        BedrockDebugLog.write("target pollution cleanup bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                + " tick=" + this.tickTimes
+                + " pollutedPiston=" + pollutedPiston
+                + " pollutedHead=" + pollutedHead
+                + " pollutedTorchSupport=" + pollutedTorchSupport
+                + " pollutedTorch=" + pollutedTorch
+                + " pollutedSlime=" + pollutedSlime
+                + " interaction=" + buildInteractionSnapshot());
     }
 
     private boolean placeTorch() {
@@ -817,5 +1093,35 @@ public class BedrockTarget {
 
     private BlockPos getTorchSupportFromPlacement() {
         return this.torchPlacement == null ? null : this.torchPlacement.getSupportPos();
+    }
+
+    private void markThroughputAction(String action) {
+        this.throughputConsumedThisTick = true;
+        this.throughputActionThisTick = action;
+    }
+
+    private void logInteractionSnapshot(String reason) {
+        BedrockDebugLog.write("target interaction snapshot bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                + " tick=" + this.tickTimes
+                + " reason=" + reason
+                + " " + buildInteractionSnapshot());
+    }
+
+    private String buildInteractionSnapshot() {
+        return "bedrock=" + describeInteraction(this.bedrockPos)
+                + " piston=" + describeInteraction(this.pistonPos)
+                + " head=" + describeInteraction(this.headPos)
+                + " torchSupport=" + describeInteraction(this.torchSupportPos)
+                + " torch=" + describeInteraction(getTorchPos())
+                + " slime=" + describeInteraction(this.slimePos);
+    }
+
+    private String describeInteraction(BlockPos pos) {
+        if (pos == null) {
+            return "null";
+        }
+        return BedrockDebugLog.pos(pos)
+                + "|inRange=" + ConfigUtils.canInteracted(pos)
+                + "|state=" + BedrockDebugLog.describeState(level.getBlockState(pos));
     }
 }

@@ -19,10 +19,12 @@ public final class BedrockController {
     private static final String RETRY_COOLDOWN_KEY = "bedrock_retry";
     private static final String CLEANUP_RETRY_COOLDOWN_KEY = "cleanup_retry";
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
+    private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int CLEANUP_LIMIT_PER_TICK = 48;
-    private static final int SUBMITS_PER_TICK_CAP = 2;
+    private static final int ACCEPT_BACKPRESSURE_TICKS = 1;
+    private static final int MAX_SUBMIT_REJECTIONS_PER_TICK = 3;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
@@ -30,6 +32,8 @@ public final class BedrockController {
     private static long nextExecuteTick = 0L;
     private static long lastProcessedTick = Long.MIN_VALUE;
     private static int acceptedThisTick = 0;
+    private static int rejectedThisTick = 0;
+    private static int cleanupPressureThisTick = 0;
     private static int confirmedSuccessesSinceReset = 0;
 
     private BedrockController() {
@@ -46,6 +50,8 @@ public final class BedrockController {
         nextExecuteTick = 0L;
         lastProcessedTick = Long.MIN_VALUE;
         acceptedThisTick = 0;
+        rejectedThisTick = 0;
+        cleanupPressureThisTick = 0;
         confirmedSuccessesSinceReset = 0;
     }
 
@@ -62,9 +68,11 @@ public final class BedrockController {
         }
         lastProcessedTick = now;
         acceptedThisTick = 0;
+        rejectedThisTick = 0;
 
         // 强力清理队列：死磕到底，变空气才移除
         processCleanupQueue();
+        cleanupPressureThisTick = sampleCleanupPressure(level);
 
         if (BedrockInventory.warningMessage() != null) {
             return;
@@ -76,14 +84,16 @@ public final class BedrockController {
             BedrockDebugLog.write("controller tick targets=" + TARGETS.size()
                     + " active=" + countActiveTargets()
                     + " cleanup=" + CLEANUP_QUEUE.size()
+                    + " cleanupPressure=" + cleanupPressureThisTick
                     + " budget=" + executeBudget
+                    + " submitCap=" + getSubmitCap()
                     + " nextExecuteTick=" + nextExecuteTick
+                    + " nextAcceptTick=" + nextAcceptTick
                     + " now=" + now);
         }
         Set<BedrockTarget> processedTargets = new LinkedHashSet<>();
         executeBudget = processTargets(level, executeBudget, true, processedTargets);
         executeBudget = processTargets(level, executeBudget, false, processedTargets);
-        executeBudget = processTargets(level, executeBudget, true, processedTargets);
 
         if (executeBudget < initialExecuteBudget) {
             scheduleNextExecuteWindow();
@@ -91,7 +101,10 @@ public final class BedrockController {
     }
 
     public static boolean canScanForTargets() {
-        if (isStartupSerialPhase() && !TARGETS.isEmpty()) {
+        if (isStrictStartupSerialMode() && !TARGETS.isEmpty()) {
+            return false;
+        }
+        if (isAcceptBackpressured()) {
             return false;
         }
         return acceptedThisTick < getSubmitCap() && countActiveTargets() < getActiveTargetCap();
@@ -148,6 +161,7 @@ public final class BedrockController {
         BlockPos pendingCleanupPos = findPendingCleanupConflict(target);
         if (pendingCleanupPos != null) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            noteSubmitRejected("pending_cleanup", pos, pendingCleanupPos);
             BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
                     + " reason=pending_cleanup"
                     + " blockingPos=" + BedrockDebugLog.pos(pendingCleanupPos)
@@ -157,7 +171,8 @@ public final class BedrockController {
 
         BedrockTarget conflict = findConflictTarget(target);
         if (conflict != null) {
-            setRetryCooldown(pos, 2);
+            setRetryCooldown(pos, MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS);
+            noteSubmitRejected("machine_overlap", pos, conflict.getBedrockPos());
             BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
                     + " reason=machine_overlap"
                     + " conflictBedrock=" + BedrockDebugLog.pos(conflict.getBedrockPos())
@@ -243,8 +258,7 @@ public final class BedrockController {
         if (now < nextExecuteTick) {
             return 0;
         }
-        int budget = Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue();
-        return budget <= 0 ? 64 : budget;
+        return getConfiguredThroughput();
     }
 
     private static BedrockTarget findConflictTarget(BedrockTarget candidate) {
@@ -332,28 +346,35 @@ public final class BedrockController {
                 continue;
             }
 
-            boolean allowInitialize = priorityOnly || executeBudget > 0;
-            BedrockTarget.Status status = target.tick(priorityOnly || executeBudget > 0, allowInitialize);
+            boolean activeStatus = countsTowardsActiveCap(target.getStatus());
+            BedrockTarget.Status status;
+            boolean hadBudget = activeStatus && executeBudget > 0;
+            if (hadBudget) {
+                status = target.tick(true, true);
+            } else if (activeStatus) {
+                status = target.refreshStatusOnly();
+            } else {
+                status = target.tick(false, false);
+            }
             processedTargets.add(target);
+
+            if (hadBudget && target.consumedThroughputThisTick()) {
+                executeBudget--;
+            }
             if (target.initializedThisTick()) {
-                if (!priorityOnly) {
-                    executeBudget--;
-                    BedrockDebugLog.write("controller init consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                            + " remainingBudget=" + executeBudget);
-                } else {
-                    BedrockDebugLog.write("controller fastlane init bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                            + " status=" + status);
-                }
+                BedrockDebugLog.write("controller init consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                        + " remainingBudget=" + executeBudget
+                        + " status=" + status);
             }
             if (target.executedThisTick()) {
-                if (priorityOnly) {
-                    BedrockDebugLog.write("controller fastlane execute bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                            + " status=" + status);
-                } else {
-                    executeBudget--;
-                    BedrockDebugLog.write("controller execute consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                            + " remainingBudget=" + executeBudget);
-                }
+                BedrockDebugLog.write("controller execute consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                        + " remainingBudget=" + executeBudget
+                        + " status=" + status);
+            } else if (hadBudget && target.consumedThroughputThisTick()) {
+                BedrockDebugLog.write("controller action consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                        + " remainingBudget=" + executeBudget
+                        + " status=" + status
+                        + " action=" + target.getThroughputActionThisTick());
             }
 
             boolean retireOnSuccessfulRetracting = status == BedrockTarget.Status.RETRACTING
@@ -398,15 +419,21 @@ public final class BedrockController {
     }
 
     private static int getActiveTargetCap() {
-        int executeBudget = Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue();
-        if (executeBudget <= 0) {
-            executeBudget = 64;
-        }
-        return Math.max(4, Math.min(8, executeBudget + 1));
+        return getConfiguredThroughput();
     }
 
     private static int getSubmitCap() {
-        return isStartupSerialPhase() ? 1 : SUBMITS_PER_TICK_CAP;
+        int throughput = getConfiguredThroughput();
+        if (cleanupPressureThisTick >= getHighCleanupPressureThreshold()) {
+            return Math.min(throughput, 2);
+        }
+        if (cleanupPressureThisTick >= getMediumCleanupPressureThreshold()) {
+            return Math.min(throughput, 4);
+        }
+        if (cleanupPressureThisTick >= getLowCleanupPressureThreshold()) {
+            return Math.min(throughput, Math.max(2, throughput / 2));
+        }
+        return throughput;
     }
 
     private static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
@@ -435,6 +462,26 @@ public final class BedrockController {
 
     private static boolean isStartupSerialPhase() {
         return confirmedSuccessesSinceReset == 0;
+    }
+
+    private static boolean isStrictStartupSerialMode() {
+        return isStartupSerialPhase() && getConfiguredThroughput() <= 1;
+    }
+
+    private static int getConfiguredThroughput() {
+        return Math.max(1, Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue());
+    }
+
+    private static int getLowCleanupPressureThreshold() {
+        return Math.max(8, getConfiguredThroughput());
+    }
+
+    private static int getMediumCleanupPressureThreshold() {
+        return Math.max(14, getConfiguredThroughput() + 6);
+    }
+
+    private static int getHighCleanupPressureThreshold() {
+        return Math.max(20, getConfiguredThroughput() * 2);
     }
 
     private static boolean shouldCountConfirmedSuccess(BedrockTarget target, String reason) {
@@ -511,6 +558,30 @@ public final class BedrockController {
         return 6;
     }
 
+    private static int sampleCleanupPressure(ClientLevel level) {
+        int pressure = 0;
+        for (BlockPos pos : CLEANUP_QUEUE) {
+            if (pos == null || isReservedByActiveTarget(pos)) {
+                continue;
+            }
+
+            var state = level.getBlockState(pos);
+            if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
+                continue;
+            }
+            pressure += getCleanupPressureWeight(state);
+        }
+        return pressure;
+    }
+
+    private static int getCleanupPressureWeight(net.minecraft.world.level.block.state.BlockState state) {
+        if (state.is(net.minecraft.world.level.block.Blocks.MOVING_PISTON)
+                || state.is(net.minecraft.world.level.block.Blocks.SLIME_BLOCK)) {
+            return 2;
+        }
+        return 1;
+    }
+
     private static boolean isReservedByActiveTarget(BlockPos pos) {
         for (BedrockTarget target : TARGETS) {
             if (target.getReservedPositions().contains(pos)) {
@@ -543,6 +614,32 @@ public final class BedrockController {
 
     private static boolean isTargetOnRetryCooldown(BlockPos pos) {
         return CLIENT.level != null && CooldownUtils.INSTANCE.isOnCooldown(CLIENT.level, RETRY_COOLDOWN_KEY, pos);
+    }
+
+    private static boolean isAcceptBackpressured() {
+        return ClientPlayerTickManager.getCurrentHandlerTime() < nextAcceptTick;
+    }
+
+    private static void noteSubmitRejected(String reason, BlockPos pos, BlockPos blocker) {
+        rejectedThisTick++;
+        boolean heavyCleanupPressure = cleanupPressureThisTick >= getHighCleanupPressureThreshold();
+        boolean exhaustedRejectBudget = rejectedThisTick >= MAX_SUBMIT_REJECTIONS_PER_TICK;
+        if (!heavyCleanupPressure && !exhaustedRejectBudget) {
+            return;
+        }
+
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        long candidateNextAcceptTick = now + ACCEPT_BACKPRESSURE_TICKS;
+        if (candidateNextAcceptTick <= nextAcceptTick) {
+            return;
+        }
+        nextAcceptTick = candidateNextAcceptTick;
+        BedrockDebugLog.write("controller accept backpressure reason=" + reason
+                + " bedrock=" + BedrockDebugLog.pos(pos)
+                + " blocker=" + BedrockDebugLog.pos(blocker)
+                + " cleanupPressure=" + cleanupPressureThisTick
+                + " rejectedThisTick=" + rejectedThisTick
+                + " nextAcceptTick=" + nextAcceptTick);
     }
 
     private static void setRetryCooldown(BlockPos pos, int ticks) {
