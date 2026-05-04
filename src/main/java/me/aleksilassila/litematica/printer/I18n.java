@@ -27,7 +27,6 @@ public class I18n {
 
     // 破基岩模式提示
     public static final I18n BEDROCK_CREATIVE_MODE = of("message.bedrock.creative_mode");
-    public static final I18n BEDROCK_MOD_NOT_LOADED = of("message.bedrock.mod_not_loaded");
 
     // 快捷潜影盒提示
     public static final I18n SHULKER_MOD_NOT_LOADED = of("message.shulker.mod_not_loaded");

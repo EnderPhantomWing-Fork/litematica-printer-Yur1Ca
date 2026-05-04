@@ -11,11 +11,12 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 public class BedrockTarget {
-    private static final int REPOWER_INTERVAL_TICKS = 2;
+    private static final int REPOWER_INTERVAL_TICKS = 4;
     private static final int POWERED_STALL_RECOVERY_TICKS = 2;
     private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
     private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
     private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
+    private static final int POWERED_STALL_REBUILD_LIMIT = 3;
 
     public enum Status {
         FAILED,
@@ -42,6 +43,7 @@ public class BedrockTarget {
     private boolean hasTried;
     private int stuckTicksCounter;
     private int lastRepowerTick = -1;
+    private int poweredStallRebuildCount;
     private int executeTick = -1;
     private int initializeTick = -1;
     private boolean executedThisTick;
@@ -230,6 +232,14 @@ public class BedrockTarget {
                             + " cooldown=" + REPOWER_INTERVAL_TICKS);
                     break;
                 }
+                if (this.poweredStallRebuildCount >= POWERED_STALL_REBUILD_LIMIT) {
+                    this.status = Status.FAILED;
+                    BedrockDebugLog.write("target powered stall failed bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                            + " tick=" + this.tickTimes
+                            + " reason=rebuild_limit"
+                            + " rebuildCount=" + this.poweredStallRebuildCount);
+                    return this.status;
+                }
 
                 for (BlockPos torchPos : getOwnedTorchPositions()) {
                     BedrockBreaker.breakBlock(torchPos, Direction.DOWN, !this.conservativeSync);
@@ -248,10 +258,12 @@ public class BedrockTarget {
                 }
 
                 this.lastRepowerTick = this.tickTimes;
+                this.poweredStallRebuildCount++;
                 BedrockDebugLog.write("target powered stall rebuild bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                         + " piston=" + BedrockDebugLog.pos(this.pistonPos)
                         + " torchSupport=" + BedrockDebugLog.pos(this.torchSupportPos)
-                        + " tick=" + this.tickTimes);
+                        + " tick=" + this.tickTimes
+                        + " rebuildCount=" + this.poweredStallRebuildCount);
             }
             case RETRACTED, FAILED, STUCK, NEEDS_WAITING, RETRACTING -> {
             }
@@ -542,6 +554,7 @@ public class BedrockTarget {
             this.status = Status.UNINITIALIZED;
             this.hasTried = false;
             this.stuckTicksCounter = 0;
+            this.poweredStallRebuildCount = 0;
             this.executeTick = -1;
             return;
         }
@@ -557,6 +570,7 @@ public class BedrockTarget {
             }
             this.hasTried = false;
             this.stuckTicksCounter = 0;
+            this.poweredStallRebuildCount = 0;
             this.executeTick = -1;
             return;
         }
@@ -736,6 +750,7 @@ public class BedrockTarget {
     private void resetPostExecuteAttempt(String reason, Status recoveryStatus) {
         this.hasTried = false;
         this.stuckTicksCounter = 0;
+        this.poweredStallRebuildCount = 0;
         this.executeTick = -1;
         BedrockDebugLog.write("target recover bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                 + " tick=" + this.tickTimes

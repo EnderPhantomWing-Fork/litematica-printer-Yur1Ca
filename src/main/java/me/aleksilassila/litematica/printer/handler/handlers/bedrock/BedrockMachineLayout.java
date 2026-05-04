@@ -63,6 +63,9 @@ public final class BedrockMachineLayout {
                     || isBlockingTarget(level, bedrockPos, layout.getHeadPos())) {
                 return true;
             }
+            if (hasBlockingTorchPlacement(level, bedrockPos, layout)) {
+                return true;
+            }
         }
         return false;
     }
@@ -100,5 +103,29 @@ public final class BedrockMachineLayout {
                 && !pos.equals(bedrockPos)
                 && !level.isOutsideBuildHeight(pos)
                 && BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos));
+    }
+
+    private static boolean hasBlockingTorchPlacement(ClientLevel level, BlockPos bedrockPos, BedrockMachineLayout layout) {
+        BlockPos centerPos = layout.getPistonPos();
+        Direction excludedAxis = layout.getPistonOffset().getOpposite();
+
+        for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
+            if (direction == excludedAxis) {
+                continue;
+            }
+
+            BlockPos topSupportPos = centerPos.relative(direction);
+            BlockPos topTorchPos = topSupportPos.above();
+            if (isBlockingTarget(level, bedrockPos, topSupportPos) || isBlockingTarget(level, bedrockPos, topTorchPos)) {
+                return true;
+            }
+
+            BlockPos wallTorchPos = centerPos.relative(direction);
+            if (isBlockingTarget(level, bedrockPos, wallTorchPos)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

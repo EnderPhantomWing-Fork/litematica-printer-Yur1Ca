@@ -250,7 +250,6 @@
   "litematica-printer.message.falling_block.no_support": "方块 %s 下方无支撑，跳过放置",
   "litematica-printer.message.falling_block.mismatch": "方块 %s 下方方块不相符，跳过放置",
   "litematica-printer.message.bedrock.creative_mode": "创造模式无法使用破基岩模式！",
-  "litematica-printer.message.bedrock.mod_not_loaded": "未安装 Fabric-Bedrock-Miner/Block-Miner 模组，无法破基岩！",
   "litematica-printer.message.shulker.mod_not_loaded": "快捷潜影盒模组未加载！",
   "litematica-printer.message.close_all_mode": "已关闭全部模式",
   "litematica-printer.message.remote.server_error": "服务端回复异常，箱子追踪库存无法更新",

@@ -250,7 +250,6 @@
   "litematica-printer.message.falling_block.no_support": "Block %s has no support below, skipping placement",
   "litematica-printer.message.falling_block.mismatch": "Block %s has mismatched block below, skipping placement",
   "litematica-printer.message.bedrock.creative_mode": "Cannot use Bedrock Breaking mode in Creative mode!",
-  "litematica-printer.message.bedrock.mod_not_loaded": "Fabric-Bedrock-Miner/Block-Miner mod not installed, cannot break bedrock!",
   "litematica-printer.message.shulker.mod_not_loaded": "Quick Shulker mod not loaded!",
   "litematica-printer.message.close_all_mode": "All modes have been disabled",
   "litematica-printer.message.remote.server_error": "Server response error, ChestTracker inventory cannot be updated",

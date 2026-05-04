@@ -30,6 +30,7 @@ public final class BedrockController {
     private static long nextExecuteTick = 0L;
     private static long lastProcessedTick = Long.MIN_VALUE;
     private static int acceptedThisTick = 0;
+    private static int confirmedSuccessesSinceReset = 0;
 
     private BedrockController() {
     }
@@ -45,6 +46,7 @@ public final class BedrockController {
         nextExecuteTick = 0L;
         lastProcessedTick = Long.MIN_VALUE;
         acceptedThisTick = 0;
+        confirmedSuccessesSinceReset = 0;
     }
 
     public static void tick() {
@@ -89,7 +91,10 @@ public final class BedrockController {
     }
 
     public static boolean canScanForTargets() {
-        return acceptedThisTick < SUBMITS_PER_TICK_CAP && countActiveTargets() < getActiveTargetCap();
+        if (isStartupSerialPhase() && !TARGETS.isEmpty()) {
+            return false;
+        }
+        return acceptedThisTick < getSubmitCap() && countActiveTargets() < getActiveTargetCap();
     }
 
     public static boolean canAccept(BlockPos pos) {
@@ -243,9 +248,9 @@ public final class BedrockController {
     }
 
     private static BedrockTarget findConflictTarget(BedrockTarget candidate) {
-        Set<BlockPos> candidateFootprint = candidate.getReservedPositions();
+        Set<BlockPos> candidateFootprint = candidate.getMachineFootprint();
         for (BedrockTarget existing : TARGETS) {
-            Set<BlockPos> existingFootprint = existing.getReservedPositions();
+            Set<BlockPos> existingFootprint = existing.getMachineFootprint();
             for (BlockPos pos : candidateFootprint) {
                 if (existingFootprint.contains(pos)) {
                     return existing;
@@ -369,6 +374,9 @@ public final class BedrockController {
         } else if ("out_of_range".equals(reason)) {
             setRetryCooldown(target.getBedrockPos(), SUBMIT_RETRY_COOLDOWN_TICKS);
         }
+        if (shouldCountConfirmedSuccess(target, reason)) {
+            confirmedSuccessesSinceReset++;
+        }
         BedrockDebugLog.write("controller cleanup start bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
                 + " status=" + target.getStatus()
                 + " cleanupCount=" + target.getCleanupPositions().size()
@@ -397,6 +405,10 @@ public final class BedrockController {
         return Math.max(4, Math.min(8, executeBudget + 1));
     }
 
+    private static int getSubmitCap() {
+        return isStartupSerialPhase() ? 1 : SUBMITS_PER_TICK_CAP;
+    }
+
     private static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
         return status == BedrockTarget.Status.UNINITIALIZED
                 || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
@@ -419,6 +431,17 @@ public final class BedrockController {
                 || status == BedrockTarget.Status.NEEDS_WAITING
                 || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
                 || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
+    }
+
+    private static boolean isStartupSerialPhase() {
+        return confirmedSuccessesSinceReset == 0;
+    }
+
+    private static boolean shouldCountConfirmedSuccess(BedrockTarget target, String reason) {
+        if (reason != null || CLIENT.level == null) {
+            return false;
+        }
+        return !BedrockTargetBlocks.isTargetBlock(CLIENT.level.getBlockState(target.getBedrockPos()));
     }
 
     private static void cleanupBlockOrQueue(BlockPos pos, boolean predictRemoval) {

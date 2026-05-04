@@ -246,7 +246,6 @@
   "litematica-printer.message.falling_block.no_support": "磚 %s 下方無托，棄置",
   "litematica-printer.message.falling_block.mismatch": "磚 %s 下方石不符，棄置",
   "litematica-printer.message.bedrock.creative_mode": "創造之態，不可破基巖！",
-  "litematica-printer.message.bedrock.mod_not_loaded": "未修Fabric-Bedrock-Miner/Block-Miner之術，不可破基巖！",
   "litematica-printer.message.shulker.mod_not_loaded": "速取潛影盒之術未修！",
   "litematica-printer.message.close_all_mode": "已偃息諸態",
   "litematica-printer.message.remote.server_error": "伺服異應，箱蹤庫藏無以更新",

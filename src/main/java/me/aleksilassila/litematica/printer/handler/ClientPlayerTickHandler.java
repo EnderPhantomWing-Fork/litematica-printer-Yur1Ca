@@ -164,7 +164,8 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 this.skipIteration.set(false);
                 this.guiBlockInfoQueue.clear(); // 重置渲染信息
                 this.renderIndex = 0;   // 重置渲染信息
-                for (BlockPos pos : playerInteractionBox) {
+                Iterable<BlockPos> iterationPositions = this.getIterationPositions(playerInteractionBox);
+                for (BlockPos pos : iterationPositions) {
                     // 单Tick迭代次数限制：达到最大次数则终止循环（防主线程阻塞）
                     if (maxTotalIter > 0 && ++totalIterCount >= maxTotalIter) {
                         interrupt = true;
@@ -304,6 +305,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
     protected int getMaxTotalIterationsPerTick() {
         return Configs.Core.ITERATOR_TOTAL_PER_TICK.getIntegerValue();
+    }
+
+    protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        return playerInteractionBox;
     }
 
     protected void preprocess() {
