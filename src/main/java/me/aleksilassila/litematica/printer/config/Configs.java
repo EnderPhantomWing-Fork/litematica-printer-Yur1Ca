@@ -378,13 +378,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     public static class Bedrock {
         public static final ConfigInteger BEDROCK_INTERVAL = integer("bedrockInterval")
-                .defaultValue(0)
-                .range(2, 10)
+                .defaultValue(2)
+                .range(0, 20)
                 .build();
 
         public static final ConfigInteger BEDROCK_BLOCKS_PER_TICK = integer("bedrockBlocksPerTick")
-                .defaultValue(1)
-                .range(1, 10)
+                .defaultValue(6)
+                .range(1, 16)
                 .build();
 
         public static final ConfigStringList BEDROCK_WHITELIST = stringList("bedrockWhitelist")

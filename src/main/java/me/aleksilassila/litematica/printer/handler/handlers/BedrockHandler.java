@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class BedrockHandler extends ClientPlayerTickHandler {
     private static final Direction[] NEIGHBOR_DIRECTIONS = Direction.values();
+    private static final int CANDIDATE_SOFT_CAP = 192;
 
     public BedrockHandler() {
         super("bedrock", PrintModeType.BEDROCK, Configs.Hotkeys.BEDROCK, null, true);
@@ -63,7 +64,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             return List.of();
         }
 
-        List<BlockPos> positions = new ArrayList<>();
+        List<CandidateInfo> candidates = new ArrayList<>();
         for (BlockPos pos : playerInteractionBox) {
             if (pos == null || !ConfigUtils.canInteracted(pos)) {
                 continue;
@@ -71,14 +72,31 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             if (!BedrockTargetBlocks.isTargetBlock(this.level.getBlockState(pos))) {
                 continue;
             }
-            positions.add(pos.immutable());
+            if (BedrockController.isPositionOnRetryCooldown(pos)) {
+                continue;
+            }
+            candidates.add(buildCandidate(pos.immutable()));
         }
 
-        positions.sort(Comparator
-                .comparingInt(this::candidatePriority)
-                .thenComparingInt(this::neighborTargetCount)
-                .thenComparingDouble(this::distanceSqToPlayer));
-        return positions;
+        if (candidates.size() <= 1) {
+            List<BlockPos> single = new ArrayList<>(candidates.size());
+            for (CandidateInfo candidate : candidates) {
+                single.add(candidate.pos());
+            }
+            return single;
+        }
+
+        candidates.sort(Comparator
+                .comparingInt(CandidateInfo::priority)
+                .thenComparingInt(CandidateInfo::neighborTargetCount)
+                .thenComparingDouble(CandidateInfo::distanceSqToPlayer));
+
+        int limit = Math.min(candidates.size(), CANDIDATE_SOFT_CAP);
+        List<BlockPos> filtered = new ArrayList<>(limit);
+        for (int i = 0; i < limit; i++) {
+            filtered.add(candidates.get(i).pos());
+        }
+        return filtered;
     }
 
     @Override
@@ -92,9 +110,12 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(blockPos))) {
+            setIterationConsumedEffectiveExecution(false);
             return;
         }
-        if (BedrockController.submit(blockPos)) {
+        boolean submitted = BedrockController.submit(blockPos);
+        setIterationConsumedEffectiveExecution(submitted);
+        if (submitted) {
             // Allow a second same-tick submit when the controller still has safe capacity.
             skipIteration.set(!BedrockController.canScanForTargets());
         }
@@ -107,25 +128,34 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         }
     }
 
-    private int candidatePriority(BlockPos pos) {
+    private CandidateInfo buildCandidate(BlockPos pos) {
+        if (this.level == null) {
+            return new CandidateInfo(pos, Integer.MAX_VALUE, Integer.MAX_VALUE, Double.MAX_VALUE);
+        }
+
+        BedrockMachineLayout layout = BedrockMachineLayout.find(this.level, pos);
+        int priority = candidatePriority(pos, layout);
+        int neighborTargetCount = neighborTargetCount(pos);
+        double distanceSqToPlayer = distanceSqToPlayer(pos);
+        return new CandidateInfo(pos, priority, neighborTargetCount, distanceSqToPlayer);
+    }
+
+    private int candidatePriority(BlockPos pos, BedrockMachineLayout layout) {
         if (this.level == null) {
             return Integer.MAX_VALUE;
         }
-        BedrockMachineLayout layout = BedrockMachineLayout.find(this.level, pos);
+        int controllerPenalty = BedrockController.getSchedulingPenalty(pos);
         if (layout != null) {
             int penalty = 0;
-            if (BedrockMachineLayout.shouldDeferUntilExposed(this.level, pos)) {
-                penalty += 100;
-            }
             if (hasSlimeFallback(layout, pos)) {
                 penalty += 10;
             }
-            return penalty;
+            return controllerPenalty + penalty;
         }
         if (BedrockMachineLayout.shouldDeferUntilExposed(this.level, pos)) {
-            return 1_000;
+            return controllerPenalty + 1_000;
         }
-        return 10_000;
+        return controllerPenalty + 10_000;
     }
 
     private boolean hasSlimeFallback(BedrockMachineLayout layout, BlockPos bedrockPos) {
@@ -166,4 +196,8 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 pos.getZ() + 0.5
         );
     }
+
+    private record CandidateInfo(BlockPos pos, int priority, int neighborTargetCount, double distanceSqToPlayer) {
+    }
+
 }

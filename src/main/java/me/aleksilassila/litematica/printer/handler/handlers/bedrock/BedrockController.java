@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -16,6 +17,12 @@ import java.util.Set;
 
 public final class BedrockController {
     private static final Minecraft CLIENT = Minecraft.getInstance();
+    private static final Direction[] HORIZONTAL_DIRECTIONS = {
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.EAST,
+            Direction.WEST
+    };
     private static final String RETRY_COOLDOWN_KEY = "bedrock_retry";
     private static final String CLEANUP_RETRY_COOLDOWN_KEY = "cleanup_retry";
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
@@ -24,7 +31,6 @@ public final class BedrockController {
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int CLEANUP_LIMIT_PER_TICK = 48;
     private static final int ACCEPT_BACKPRESSURE_TICKS = 1;
-    private static final int MAX_SUBMIT_REJECTIONS_PER_TICK = 3;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
@@ -70,7 +76,6 @@ public final class BedrockController {
         acceptedThisTick = 0;
         rejectedThisTick = 0;
 
-        // 强力清理队列：死磕到底，变空气才移除
         processCleanupQueue();
         cleanupPressureThisTick = sampleCleanupPressure(level);
 
@@ -133,6 +138,29 @@ public final class BedrockController {
             if (target.getPistonPos().equals(pos)) return false;
         }
         return true;
+    }
+
+    public static boolean isPositionOnRetryCooldown(BlockPos pos) {
+        return isTargetOnRetryCooldown(pos);
+    }
+
+    public static int getSchedulingPenalty(BlockPos pos) {
+        if (pos == null || CLIENT.level == null || (TARGETS.isEmpty() && CLEANUP_QUEUE.isEmpty())) {
+            return 0;
+        }
+
+        int penalty = 0;
+        penalty += getSchedulingProbePenalty(pos);
+        penalty += getSchedulingProbePenalty(pos.above());
+        penalty += getSchedulingProbePenalty(pos.above(2));
+
+        for (Direction direction : HORIZONTAL_DIRECTIONS) {
+            BlockPos neighbor = pos.relative(direction);
+            penalty += getSchedulingProbePenalty(neighbor);
+            penalty += getSchedulingProbePenalty(neighbor.above());
+        }
+
+        return penalty;
     }
 
     public static boolean submit(BlockPos pos) {
@@ -228,7 +256,6 @@ public final class BedrockController {
                 continue;
             }
 
-            // Cleanup only touches machine residues to avoid touching user structures.
             if (!BedrockTargetBlocks.isCleanupResidue(state)) {
                 iterator.remove();
                 CONSERVATIVE_CLEANUP.remove(pos);
@@ -621,9 +648,12 @@ public final class BedrockController {
     }
 
     private static void noteSubmitRejected(String reason, BlockPos pos, BlockPos blocker) {
-        rejectedThisTick++;
+        int rejectWeight = getSubmitRejectWeight(reason);
+        if (rejectWeight > 0) {
+            rejectedThisTick += rejectWeight;
+        }
         boolean heavyCleanupPressure = cleanupPressureThisTick >= getHighCleanupPressureThreshold();
-        boolean exhaustedRejectBudget = rejectedThisTick >= MAX_SUBMIT_REJECTIONS_PER_TICK;
+        boolean exhaustedRejectBudget = rejectedThisTick >= getSubmitRejectBudget();
         if (!heavyCleanupPressure && !exhaustedRejectBudget) {
             return;
         }
@@ -640,6 +670,53 @@ public final class BedrockController {
                 + " cleanupPressure=" + cleanupPressureThisTick
                 + " rejectedThisTick=" + rejectedThisTick
                 + " nextAcceptTick=" + nextAcceptTick);
+    }
+
+    private static int getSubmitRejectWeight(String reason) {
+        if ("machine_overlap".equals(reason) && cleanupPressureThisTick <= 0) {
+            return 0;
+        }
+        return 1;
+    }
+
+    private static int getSubmitRejectBudget() {
+        return Math.max(8, getConfiguredThroughput() / 2);
+    }
+
+    private static int getSchedulingProbePenalty(BlockPos pos) {
+        if (pos == null || CLIENT.level == null) {
+            return 0;
+        }
+
+        boolean reservedByActiveTarget = isReservedByActiveTarget(pos);
+        int penalty = reservedByActiveTarget ? 60 : 0;
+
+        var state = CLIENT.level.getBlockState(pos);
+        if (CLEANUP_QUEUE.contains(pos)) {
+            penalty += getSchedulingCleanupPenalty(state);
+        } else if (!reservedByActiveTarget && BedrockTargetBlocks.isCleanupResidue(state)) {
+            penalty += getSchedulingCleanupPenalty(state);
+        }
+
+        return penalty;
+    }
+
+    private static int getSchedulingCleanupPenalty(net.minecraft.world.level.block.state.BlockState state) {
+        if (state.is(net.minecraft.world.level.block.Blocks.MOVING_PISTON)) {
+            return 100;
+        }
+        if (state.is(net.minecraft.world.level.block.Blocks.SLIME_BLOCK)) {
+            return 80;
+        }
+        if (state.is(net.minecraft.world.level.block.Blocks.PISTON_HEAD)
+                || state.is(net.minecraft.world.level.block.Blocks.PISTON)) {
+            return 70;
+        }
+        if (state.is(net.minecraft.world.level.block.Blocks.REDSTONE_TORCH)
+                || state.is(net.minecraft.world.level.block.Blocks.REDSTONE_WALL_TORCH)) {
+            return 55;
+        }
+        return 40;
     }
 
     private static void setRetryCooldown(BlockPos pos, int ticks) {

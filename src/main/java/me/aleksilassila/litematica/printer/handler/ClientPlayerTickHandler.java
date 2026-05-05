@@ -46,6 +46,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     private final ConfigOptionList selectionType;
     private final AtomicReference<Boolean> skipIteration = new AtomicReference<>(false);
     private final Queue<GuiBlockInfo> guiBlockInfoQueue = new ConcurrentLinkedQueue<>();
+    private boolean iterationConsumedEffectiveExecution = true;
 
     protected Minecraft mc;
     protected ClientLevel level;
@@ -207,9 +208,12 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                     gui.posInSelectionRange = true;
                     // 方块迭代权限校验：子类可重写实现自定义过滤逻辑
                     if (this.canIterationBlockPos(pos) && !isBlockPosOnCooldown(pos)) {
+                        this.iterationConsumedEffectiveExecution = true;
                         this.executeIteration(pos, this.skipIteration);
                         gui.execute = true;
-                        if (this.skipIteration.get() || maxEffectiveExec > 0 && ++effectiveExecCount >= maxEffectiveExec) {
+                        boolean consumedEffectiveExecution = this.iterationConsumedEffectiveExecution;
+                        if (this.skipIteration.get()
+                                || maxEffectiveExec > 0 && consumedEffectiveExecution && ++effectiveExecCount >= maxEffectiveExec) {
                             interrupt = true;
                         }
                     }
@@ -327,6 +331,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     }
 
     protected void executeIteration(BlockPos pos, AtomicReference<Boolean> skipIteration) {
+    }
+
+    protected final void setIterationConsumedEffectiveExecution(boolean consumed) {
+        this.iterationConsumedEffectiveExecution = consumed;
     }
 
     public boolean isBlockPosOnCooldown(@Nullable BlockPos pos) {

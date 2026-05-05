@@ -59,6 +59,26 @@ public final class BedrockInventory {
         return InventoryUtils.setItemToOffhand(new ItemStack(item), CLIENT);
     }
 
+    public static boolean switchToBestTool(BlockState blockState) {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || blockState == null || blockState.isAir()) {
+            return false;
+        }
+
+        ItemStack bestStack = findBestBreakingStack(player, blockState);
+        return switchToResolvedTool(player, bestStack);
+    }
+
+    public static boolean switchToCleanupTool(BlockState blockState) {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || blockState == null || blockState.isAir()) {
+            return false;
+        }
+
+        ItemStack bestStack = findBestCleanupBreakingStack(player, blockState);
+        return switchToResolvedTool(player, bestStack);
+    }
+
     public static boolean hasAtLeast(Item item, int count) {
         return count(item) >= count;
     }
@@ -66,6 +86,118 @@ public final class BedrockInventory {
     private static int count(Item item) {
         LocalPlayer player = CLIENT.player;
         return player == null ? 0 : player.getInventory().countItem(item);
+    }
+
+    private static ItemStack findBestBreakingStack(LocalPlayer player, BlockState blockState) {
+        Inventory inventory = player.getInventory();
+        ItemStack bestStack = ItemStack.EMPTY;
+        float bestProgress = 0.0F;
+        for (ItemStack stack : InventoryUtils.getMainStacks(inventory)) {
+            if (!isAllowedBedrockTool(stack, blockState)) {
+                continue;
+            }
+            float progress = PlayerUtils.getDestroyProgress(player, blockState, stack);
+            if (progress > bestProgress) {
+                bestProgress = progress;
+                bestStack = stack;
+            }
+        }
+        if (!bestStack.isEmpty()) {
+            return bestStack;
+        }
+
+        ItemStack current = player.getMainHandItem();
+        return isAllowedBedrockTool(current, blockState) ? current : ItemStack.EMPTY;
+    }
+
+    private static ItemStack findBestCleanupBreakingStack(LocalPlayer player, BlockState blockState) {
+        Inventory inventory = player.getInventory();
+        BlockState probeState = getCleanupProbeState(blockState);
+        ItemStack bestPreferredStack = ItemStack.EMPTY;
+        float bestPreferredScore = 0.0F;
+        ItemStack bestFallbackStack = ItemStack.EMPTY;
+        float bestFallbackScore = 0.0F;
+
+        for (ItemStack stack : InventoryUtils.getMainStacks(inventory)) {
+            if (!isAllowedBedrockTool(stack, probeState)) {
+                continue;
+            }
+
+            float score = getCleanupToolScore(player, probeState, stack);
+            if (score > bestFallbackScore) {
+                bestFallbackScore = score;
+                bestFallbackStack = stack;
+            }
+            if (isPreferredCleanupTool(stack, probeState) && score > bestPreferredScore) {
+                bestPreferredScore = score;
+                bestPreferredStack = stack;
+            }
+        }
+
+        if (!bestPreferredStack.isEmpty()) {
+            return bestPreferredStack;
+        }
+        if (!bestFallbackStack.isEmpty()) {
+            return bestFallbackStack;
+        }
+
+        ItemStack current = player.getMainHandItem();
+        return isAllowedBedrockTool(current, probeState) ? current : ItemStack.EMPTY;
+    }
+
+    private static boolean switchToResolvedTool(LocalPlayer player, ItemStack bestStack) {
+        if (bestStack.isEmpty()) {
+            return false;
+        }
+        if (ItemStack.isSameItemSameComponents(bestStack, player.getMainHandItem())) {
+            return true;
+        }
+        return InventoryUtils.setPickedItemToHand(bestStack, CLIENT);
+    }
+
+    private static boolean isPreferredCleanupTool(ItemStack stack, BlockState blockState) {
+        return stack.isCorrectToolForDrops(blockState) || stack.getDestroySpeed(blockState) > 1.0F;
+    }
+
+    private static boolean isAllowedBedrockTool(ItemStack stack, BlockState blockState) {
+        if (stack.isEmpty() || blockState == null || blockState.isAir()) {
+            return false;
+        }
+
+        if (stack.isCorrectToolForDrops(blockState)) {
+            return true;
+        }
+
+        String itemPath = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+        return itemPath.equals("shears")
+                || itemPath.endsWith("_pickaxe")
+                || itemPath.endsWith("_axe")
+                || itemPath.endsWith("_shovel")
+                || itemPath.endsWith("_hoe");
+    }
+
+    private static BlockState getCleanupProbeState(BlockState cleanupState) {
+        if (cleanupState.is(Blocks.MOVING_PISTON)
+                || cleanupState.is(Blocks.PISTON)
+                || cleanupState.is(Blocks.PISTON_HEAD)) {
+            return Blocks.PISTON.defaultBlockState();
+        }
+        if (cleanupState.is(Blocks.SLIME_BLOCK)) {
+            return Blocks.SLIME_BLOCK.defaultBlockState();
+        }
+        if (cleanupState.is(Blocks.REDSTONE_TORCH)
+                || cleanupState.is(Blocks.REDSTONE_WALL_TORCH)) {
+            return Blocks.REDSTONE_TORCH.defaultBlockState();
+        }
+        return cleanupState;
+    }
+
+    private static float getCleanupToolScore(LocalPlayer player, BlockState probeState, ItemStack stack) {
+        float speed = getBlockBreakingSpeed(player, probeState, stack);
+        if (!Float.isFinite(speed) || speed < 0.0F) {
+            return 0.0F;
+        }
+        return speed;
     }
 
     private static boolean canInstantMinePiston(LocalPlayer player) {

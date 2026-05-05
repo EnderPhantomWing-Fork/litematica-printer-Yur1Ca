@@ -6,7 +6,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
-import net.minecraft.world.item.Items;
 
 public final class BedrockBreaker {
     private static final Minecraft CLIENT = Minecraft.getInstance();
@@ -33,18 +32,20 @@ public final class BedrockBreaker {
             return false;
         }
 
-        // Optimization: Check if we are already holding a suitable pickaxe before switching
-        var heldItem = CLIENT.player.getMainHandItem().getItem();
-        if (heldItem != Items.DIAMOND_PICKAXE && heldItem != Items.NETHERITE_PICKAXE) {
-            if (!BedrockInventory.switchToItem(Items.DIAMOND_PICKAXE) && !BedrockInventory.switchToItem(Items.NETHERITE_PICKAXE)) {
-                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_pickaxe");
-                return false;
-            }
+        boolean cleanupResidue = BedrockTargetBlocks.isCleanupResidue(state);
+        boolean switched = cleanupResidue
+                ? BedrockInventory.switchToCleanupTool(state)
+                : BedrockInventory.switchToBestTool(state);
+        if (!switched) {
+            BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_effective_tool");
+            return false;
         }
 
         BedrockDebugLog.write("break start pos=" + BedrockDebugLog.pos(pos)
                 + " state=" + BedrockDebugLog.describeState(state)
                 + " face=" + direction
+                + " cleanupResidue=" + cleanupResidue
+                + " tool=" + CLIENT.player.getMainHandItem().getItem()
                 + " predictRemoval=" + predictRemoval);
 
         if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval()) {

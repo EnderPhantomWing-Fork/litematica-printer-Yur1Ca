@@ -14,13 +14,16 @@ import java.time.format.DateTimeFormatter;
 
 public final class BedrockDebugLog {
     private static final String ENABLED_PROPERTY = "litematica_printer.bedrockDebugLog";
+    private static final String LEGACY_ENABLED_PROPERTY = "printer.bedrockDebugLog";
     private static final String MODE_PROPERTY = "litematica_printer.bedrockDebugLogMode";
+    private static final String LEGACY_MODE_PROPERTY = "printer.bedrockDebugLogMode";
     private static final String PATH_PROPERTY = "litematica_printer.bedrockDebugLogPath";
+    private static final String LEGACY_PATH_PROPERTY = "printer.bedrockDebugLogPath";
     private static final String DEFAULT_MODE = "events";
     private static final DateTimeFormatter SESSION_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Path LOG_PATH = resolveLogPath();
-    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "false"));
-    private static final String MODE = System.getProperty(MODE_PROPERTY, DEFAULT_MODE).trim().toLowerCase();
+    private static final boolean ENABLED = resolveEnabled();
+    private static final String MODE = resolveMode();
     private static boolean initialized;
 
     private BedrockDebugLog() {
@@ -69,11 +72,29 @@ public final class BedrockDebugLog {
     }
 
     private static Path resolveLogPath() {
-        String customPath = System.getProperty(PATH_PROPERTY, "").trim();
+        String customPath = System.getProperty(PATH_PROPERTY, System.getProperty(LEGACY_PATH_PROPERTY, "")).trim();
         if (!customPath.isEmpty()) {
             return Paths.get(customPath);
         }
         return Minecraft.getInstance().gameDirectory.toPath().resolve("logs").resolve("bedrock-printer-debug.log");
+    }
+
+    private static boolean resolveEnabled() {
+        String explicit = System.getProperty(ENABLED_PROPERTY);
+        if (explicit != null) {
+            return Boolean.parseBoolean(explicit);
+        }
+        String legacy = System.getProperty(LEGACY_ENABLED_PROPERTY);
+        if (legacy != null) {
+            return Boolean.parseBoolean(legacy);
+        }
+        return true;
+    }
+
+    private static String resolveMode() {
+        return System.getProperty(MODE_PROPERTY, System.getProperty(LEGACY_MODE_PROPERTY, DEFAULT_MODE))
+                .trim()
+                .toLowerCase();
     }
 
     private static void initializeLogFile() throws Exception {

@@ -139,9 +139,7 @@ public class BedrockTarget {
         this.initializedThisTick = false;
         this.throughputConsumedThisTick = false;
         this.throughputActionThisTick = null;
-        
-        // Only increment tick counter if we are actually doing something or waiting for sync.
-        // This prevents tasks from failing while they are just queued in the controller.
+
         if (this.status != Status.UNINITIALIZED && this.status != Status.EXTENDED) {
             this.tickTimes++;
         } else if (this.status == Status.EXTENDED && allowExecute) {
@@ -163,7 +161,6 @@ public class BedrockTarget {
                             + " reason=missing_required_items");
                     break;
                 }
-                // Initial placement doesn't count towards the 40-tick limit until it finishes.
                 if (!BedrockPlacer.placePiston(this.pistonPos, this.layout.getPrimingFacing())) {
                     BedrockDebugLog.write("target initialize deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                             + " reason=place_piston_failed");
@@ -535,7 +532,6 @@ public class BedrockTarget {
         }
         if (level.getBlockState(this.pistonPos).is(Blocks.MOVING_PISTON)) {
             this.status = Status.RETRACTING;
-            // Immediate retirement if bedrock is gone to speed up throughput
             if (!BedrockTargetBlocks.isTargetBlock(level.getBlockState(this.bedrockPos))) {
                 this.status = Status.RETRACTED;
             }
@@ -842,7 +838,6 @@ public class BedrockTarget {
         this.tickTimes = 0;
         this.hasTried = false;
         this.stuckTicksCounter = 0;
-        this.poweredStallRebuildCount = 0;
         this.executeTick = -1;
         this.initializeTick = -1;
         this.lastRepowerTick = -1;
