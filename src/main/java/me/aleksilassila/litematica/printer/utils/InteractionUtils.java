@@ -38,6 +38,7 @@ public class InteractionUtils {
 
     private final Queue<BlockPos> breakQueue = new LinkedList<>();
     private BlockPos breakPos;
+    private boolean forceDelayedDestroy;
 
     private InteractionUtils() {
     }
@@ -103,6 +104,7 @@ public class InteractionUtils {
             if (breakPos != null) {
                 breakPos = null;
             }
+            this.forceDelayedDestroy = false;
         }
     }
 
@@ -142,23 +144,36 @@ public class InteractionUtils {
             // 检查当前目标是否仍可破坏（如冰挖掘后生成水/流体，流体不可破坏）
             if (!canBreakBlock(breakPos)) {
                 breakPos = null;
+                this.forceDelayedDestroy = false;
                 onTick();
                 return;
             }
             if (continueDestroyBlock(breakPos, Direction.DOWN) != BlockBreakResult.IN_PROGRESS) {
                 breakPos = null;
+                this.forceDelayedDestroy = false;
                 onTick();
             }
         }
     }
 
-    public BlockBreakResult continueDestroyBlock(final BlockPos blockPos, Direction direction, boolean localPrediction) {
+    public boolean hasActiveDestroyTarget() {
+        return this.breakPos != null;
+    }
+
+    public BlockBreakResult continueDestroyBlock(final BlockPos blockPos, Direction direction, boolean localPrediction, boolean trackBreakPos) {
         MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
-        BlockBreakResult result = gameMode.litematica_printer$continueDestroyBlock(localPrediction, blockPos, direction);
-        if (result == BlockBreakResult.IN_PROGRESS) {
+        BlockBreakResult result = gameMode.litematica_printer$continueDestroyBlock(localPrediction, blockPos, direction, this.forceDelayedDestroy);
+        if (trackBreakPos && result == BlockBreakResult.IN_PROGRESS) {
             breakPos = blockPos;
         }
+        if (result != BlockBreakResult.IN_PROGRESS) {
+            this.forceDelayedDestroy = false;
+        }
         return result;
+    }
+
+    public BlockBreakResult continueDestroyBlock(final BlockPos blockPos, Direction direction, boolean localPrediction) {
+        return this.continueDestroyBlock(blockPos, direction, localPrediction, true);
     }
 
     public BlockBreakResult continueDestroyBlock(BlockPos blockPos, Direction direction) {
@@ -167,6 +182,28 @@ public class InteractionUtils {
 
     public BlockBreakResult continueDestroyBlock(BlockPos blockPos) {
         return this.continueDestroyBlock(blockPos, Direction.DOWN);
+    }
+
+    public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
+        this.forceDelayedDestroy = true;
+        return this.continueDestroyBlock(blockPos, direction, !Configs.Break.BREAK_USE_PACKET.getBooleanValue(), false);
+    }
+
+    public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos) {
+        return this.continueDestroyBlockForMine(blockPos, Direction.DOWN);
+    }
+
+    public boolean isPendingDelayedDestroy(BlockPos blockPos) {
+        MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
+        return gameMode != null && gameMode.litematica_printer$isPendingDelayedDestroy(blockPos);
+    }
+
+    public BlockBreakResult continueDestroyBlockWithoutTracking(BlockPos blockPos, Direction direction) {
+        return this.continueDestroyBlock(blockPos, direction, !Configs.Break.BREAK_USE_PACKET.getBooleanValue(), false);
+    }
+
+    public BlockBreakResult continueDestroyBlockWithoutTracking(BlockPos blockPos) {
+        return this.continueDestroyBlockWithoutTracking(blockPos, Direction.DOWN);
     }
 
     public InteractionResult useItemOn(boolean localPrediction, InteractionHand hand, BlockHitResult blockHit) {

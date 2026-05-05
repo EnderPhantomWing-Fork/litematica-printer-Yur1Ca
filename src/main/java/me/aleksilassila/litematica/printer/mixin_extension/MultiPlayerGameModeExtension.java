@@ -10,5 +10,13 @@ import net.minecraft.world.phys.BlockHitResult;
 public interface MultiPlayerGameModeExtension {
     InteractionResult litematica_printer$useItemOn(boolean localPrediction, InteractionHand hand, BlockHitResult blockHit);
 
-    BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction);
+    default BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction) {
+        return this.litematica_printer$continueDestroyBlock(localPrediction, blockPos, direction, false);
+    }
+
+    BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy);
+
+    default boolean litematica_printer$isPendingDelayedDestroy(BlockPos blockPos) {
+        return false;
+    }
 }

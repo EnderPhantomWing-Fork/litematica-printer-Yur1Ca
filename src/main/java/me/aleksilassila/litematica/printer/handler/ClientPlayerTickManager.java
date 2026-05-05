@@ -27,34 +27,46 @@ public class ClientPlayerTickManager {
     @Getter
     @Setter
     private static int packetTick;
+    private static String lastPauseReason;
 
     public static final ImmutableList<ClientPlayerTickHandler> VALUES = ImmutableList.of(
             GUI, PRINT, FILL, FLUID, MINE, BEDROCK
     );
 
     public static void tick() {
-        // 本次TICK共享部分预先检查
-        if (isOpenHandler || switchItem() || InteractionUtils.INSTANCE.isNeedHandle()) {
+        boolean openHandler = isOpenHandler;
+        boolean switchingItem = switchItem();
+        if (openHandler || switchingItem) {
+            pause("shared_precheck openHandler=" + openHandler + " switchingItem=" + switchingItem);
             return;
         }
         if (ActionManager.INSTANCE.needWaitModifyLook) {
+            pause("send_queue_wait_modify_look");
             ActionManager.INSTANCE.sendQueue(mc.player);
             return;
         }
         if (Configs.Core.LAG_CHECK.getBooleanValue()) {
             if (packetTick > Configs.Core.LAG_CHECK_MAX.getIntegerValue()) {
+                pause("lag_check packetTick=" + packetTick + " max=" + Configs.Core.LAG_CHECK_MAX.getIntegerValue());
                 return;
             }
             packetTick++;
         }
+        resume();
         for (ClientPlayerTickHandler handler : VALUES) {
             if (!(handler instanceof GuiHandler)) {
                 // 同TICK不同处理程序进行二次迭代检查, 避免独立的处理程序修改了内容没有及时跳出导致出现资源抢占问题
-                if (isOpenHandler || switchItem() || InteractionUtils.INSTANCE.isNeedHandle()) {
+                openHandler = isOpenHandler;
+                switchingItem = switchItem();
+                if (openHandler || switchingItem) {
+                    pause("handler_precheck handler=" + handler.getId()
+                            + " openHandler=" + openHandler
+                            + " switchingItem=" + switchingItem);
                     return;
                 }
                 // 有任务需要修改视角强制退出
                 if (ActionManager.INSTANCE.needWaitModifyLook) {
+                    pause("action_wait_modify_look handler=" + handler.getId());
                     return;
                 }
             }
@@ -64,5 +76,19 @@ public class ClientPlayerTickManager {
 
     public static long getCurrentHandlerTime() {
         return ((MinecraftAccessor) Minecraft.getInstance()).getClientTickCount();
+    }
+
+    private static void pause(String reason) {
+        if (!reason.equals(lastPauseReason)) {
+            MineDebugLog.write("scheduler pause reason=" + reason + " packetTick=" + packetTick);
+            lastPauseReason = reason;
+        }
+    }
+
+    private static void resume() {
+        if (lastPauseReason != null) {
+            MineDebugLog.write("scheduler resume after=" + lastPauseReason + " packetTick=" + packetTick);
+            lastPauseReason = null;
+        }
     }
 }

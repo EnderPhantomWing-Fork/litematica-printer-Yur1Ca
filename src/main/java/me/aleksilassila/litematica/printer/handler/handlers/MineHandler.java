@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
@@ -22,6 +23,10 @@ import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTR
 
 public class MineHandler extends ClientPlayerTickHandler {
     public final static String NAME = "mine";
+    private BlockPos currentBreakPos;
+    private boolean skipMainIteration;
+    private BlockPos lastInProgressLogPos;
+    private long lastInProgressLogTick = Long.MIN_VALUE;
 
     public MineHandler() {
         super(NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
@@ -72,15 +77,77 @@ public class MineHandler extends ClientPlayerTickHandler {
         if (isBlockPosOnCooldown(pos) || CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
             return false;
         }
+        if (InteractionUtils.INSTANCE.isPendingDelayedDestroy(pos)) {
+            return false;
+        }
         return InteractionUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos));
     }
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlock(blockPos);
-        this.setBlockPosCooldown(blockPos, getBreakCooldown());
+        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(blockPos);
+        this.handleBreakResult(blockPos, result);
         if (result == BlockBreakResult.IN_PROGRESS) {
-            skipIteration.set(true);    // 本 TICK 退出剩下位置迭代
+            skipIteration.set(true);
+        }
+    }
+
+    @Override
+    protected void preprocess() {
+        this.skipMainIteration = false;
+        if (this.currentBreakPos == null || this.level == null) {
+            return;
+        }
+        if (!InteractionUtils.canBreakBlock(this.currentBreakPos) || !mineRestriction(this.level.getBlockState(this.currentBreakPos))) {
+            MineDebugLog.write("mine current target cleared pos=" + MineDebugLog.pos(this.currentBreakPos)
+                    + " reason=invalid_or_filtered"
+                    + " state=" + MineDebugLog.describeState(this.level.getBlockState(this.currentBreakPos)));
+            this.currentBreakPos = null;
+            return;
+        }
+        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(this.currentBreakPos);
+        this.handleBreakResult(this.currentBreakPos, result);
+        if (result == BlockBreakResult.IN_PROGRESS) {
+            this.skipMainIteration = true;
+        }
+    }
+
+    @Override
+    protected boolean canIterate() {
+        return !this.skipMainIteration;
+    }
+
+    private void handleBreakResult(BlockPos blockPos, BlockBreakResult result) {
+        if (result == BlockBreakResult.IN_PROGRESS) {
+            this.currentBreakPos = blockPos;
+            long currentTick = ClientPlayerTickManager.getCurrentHandlerTime();
+            if (!blockPos.equals(this.lastInProgressLogPos) || currentTick - this.lastInProgressLogTick >= 10) {
+                MineDebugLog.write("mine in_progress pos=" + MineDebugLog.pos(blockPos)
+                        + " breakCooldown=" + getBreakCooldown());
+                this.lastInProgressLogPos = blockPos;
+                this.lastInProgressLogTick = currentTick;
+            }
+            return;
+        }
+
+        if (blockPos.equals(this.lastInProgressLogPos)) {
+            this.lastInProgressLogPos = null;
+            this.lastInProgressLogTick = Long.MIN_VALUE;
+        }
+
+        if (this.currentBreakPos != null && this.currentBreakPos.equals(blockPos)) {
+            this.currentBreakPos = null;
+        }
+        if (result == BlockBreakResult.COMPLETED) {
+            this.setBlockPosCooldown(blockPos, getBreakCooldown());
+            MineDebugLog.write("mine completed pos=" + MineDebugLog.pos(blockPos)
+                    + " cooldown=" + getBreakCooldown());
+        } else if (result == BlockBreakResult.COMPLETED_WAIT) {
+            this.setBlockPosCooldown(blockPos, 2);
+            MineDebugLog.write("mine completed_wait pos=" + MineDebugLog.pos(blockPos)
+                    + " cooldown=2");
+        } else if (result == BlockBreakResult.FAILED) {
+            MineDebugLog.write("mine failed pos=" + MineDebugLog.pos(blockPos));
         }
     }
 }
