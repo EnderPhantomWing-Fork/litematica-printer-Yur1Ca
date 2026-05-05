@@ -98,11 +98,7 @@ public final class BedrockEnvironment {
     }
 
     public static BedrockTorchPlacement findTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        BedrockTorchPlacement topPlacement = findTopTorchPlacement(level, centerPos, excludedAxis, blockedPositions);
-        if (topPlacement != null) {
-            return topPlacement;
-        }
-        return findWallTorchPlacement(level, centerPos, excludedAxis, blockedPositions);
+        return findPreferredTorchPlacement(level, centerPos, excludedAxis, false, blockedPositions);
     }
 
     public static BedrockTorchPlacement findTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis) {
@@ -110,34 +106,28 @@ public final class BedrockEnvironment {
     }
 
     public static BedrockTorchPlacement findPossibleSlimeTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        BedrockTorchPlacement topPlacement = findPossibleTopSlimeTorchPlacement(level, centerPos, excludedAxis, blockedPositions);
-        if (topPlacement != null) {
-            return topPlacement;
-        }
-        return findPossibleWallSlimeTorchPlacement(level, centerPos, excludedAxis, blockedPositions);
+        return findPreferredTorchPlacement(level, centerPos, excludedAxis, true, blockedPositions);
     }
 
-    private static BedrockTorchPlacement findTopTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        BedrockTorchPlacement fallback = null;
+    private static BedrockTorchPlacement findPreferredTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, boolean allowSlimeSupport, BlockPos... blockedPositions) {
+        BedrockTorchPlacement topFallback = null;
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
             if (excludedAxis != null && direction == excludedAxis) {
                 continue;
             }
             BedrockTorchPlacement placement = new BedrockTorchPlacement(centerPos.relative(direction), Direction.UP);
-            if (!conflictsWithBlockedPositions(placement, blockedPositions) && isTorchPlacementUsable(level, placement)) {
-                if (fallback == null) {
-                    fallback = placement;
-                }
-                if (isPlacementInteractable(placement, blockedPositions)) {
-                    return placement;
-                }
+            if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
+                continue;
+            }
+            if (isPlacementInteractable(placement, blockedPositions)) {
+                return placement;
+            }
+            if (topFallback == null) {
+                topFallback = placement;
             }
         }
-        return fallback;
-    }
 
-    private static BedrockTorchPlacement findWallTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        BedrockTorchPlacement fallback = null;
+        BedrockTorchPlacement wallFallback = null;
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
             if (excludedAxis != null && direction == excludedAxis) {
                 continue;
@@ -148,61 +138,27 @@ public final class BedrockEnvironment {
                     continue;
                 }
                 BedrockTorchPlacement placement = new BedrockTorchPlacement(torchPos.relative(attachedFace.getOpposite()), attachedFace);
-                if (!conflictsWithBlockedPositions(placement, blockedPositions) && isTorchPlacementUsable(level, placement)) {
-                    if (fallback == null) {
-                        fallback = placement;
-                    }
-                    if (isPlacementInteractable(placement, blockedPositions)) {
-                        return placement;
-                    }
-                }
-            }
-        }
-        return fallback;
-    }
-
-    private static BedrockTorchPlacement findPossibleTopSlimeTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        BedrockTorchPlacement fallback = null;
-        for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
-            if (excludedAxis != null && direction == excludedAxis) {
-                continue;
-            }
-            BedrockTorchPlacement placement = new BedrockTorchPlacement(centerPos.relative(direction), Direction.UP);
-            if (!conflictsWithBlockedPositions(placement, blockedPositions) && isSlimePlacementUsable(level, placement)) {
-                if (fallback == null) {
-                    fallback = placement;
+                if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
+                    continue;
                 }
                 if (isPlacementInteractable(placement, blockedPositions)) {
                     return placement;
                 }
+                if (wallFallback == null) {
+                    wallFallback = placement;
+                }
             }
         }
-        return fallback;
+        return topFallback != null ? topFallback : wallFallback;
     }
 
-    private static BedrockTorchPlacement findPossibleWallSlimeTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, BlockPos... blockedPositions) {
-        BedrockTorchPlacement fallback = null;
-        for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
-            if (excludedAxis != null && direction == excludedAxis) {
-                continue;
-            }
-            BlockPos torchPos = centerPos.relative(direction);
-            for (Direction attachedFace : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
-                if (excludedAxis != null && attachedFace == excludedAxis) {
-                    continue;
-                }
-                BedrockTorchPlacement placement = new BedrockTorchPlacement(torchPos.relative(attachedFace.getOpposite()), attachedFace);
-                if (!conflictsWithBlockedPositions(placement, blockedPositions) && isSlimePlacementUsable(level, placement)) {
-                    if (fallback == null) {
-                        fallback = placement;
-                    }
-                    if (isPlacementInteractable(placement, blockedPositions)) {
-                        return placement;
-                    }
-                }
-            }
+    private static boolean isPlacementUsable(ClientLevel level, BedrockTorchPlacement placement, boolean allowSlimeSupport, BlockPos... blockedPositions) {
+        if (conflictsWithBlockedPositions(placement, blockedPositions)) {
+            return false;
         }
-        return fallback;
+        return allowSlimeSupport
+                ? isSlimePlacementUsable(level, placement)
+                : isTorchPlacementUsable(level, placement);
     }
 
     private static boolean conflictsWithBlockedPositions(BedrockTorchPlacement placement, BlockPos... blockedPositions) {

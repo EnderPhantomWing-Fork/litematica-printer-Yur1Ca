@@ -397,11 +397,27 @@ public class BedrockTarget {
         }
         BlockPos torchPos = getTorchPos();
         if (pos.equals(torchPos)) {
-            return isExpectedTorchState(state);
+            return this.torchPlacement != null
+                    && BedrockEnvironment.isTorchPlacementUsable(this.level, this.torchPlacement);
         }
-        return this.slimePos != null
-                && pos.equals(this.slimePos)
-                && state.is(Blocks.SLIME_BLOCK);
+        if (this.slimePos != null && pos.equals(this.slimePos)) {
+            return this.torchPlacement != null
+                    && BedrockEnvironment.isSlimePlacementUsable(this.level, this.torchPlacement);
+        }
+        return this.torchPlacement != null
+                && pos.equals(this.torchSupportPos)
+                && state.is(Blocks.SLIME_BLOCK)
+                && BedrockEnvironment.isTorchPlacementUsable(this.level, this.torchPlacement);
+    }
+
+    public boolean canReusePendingCleanupPosition(BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (pos == null || state == null || state.isAir()) {
+            return false;
+        }
+        if (pos.equals(this.pistonPos)) {
+            return isReusablePistonState(state);
+        }
+        return canReusePowerReservation(pos, state);
     }
 
     public Set<BlockPos> getStaticMachinePositions() {
@@ -461,6 +477,14 @@ public class BedrockTarget {
             return false;
         }
         return true;
+    }
+
+    private boolean isReusablePistonState(net.minecraft.world.level.block.state.BlockState state) {
+        if (state == null || !state.is(Blocks.PISTON) || state.getValue(PistonBaseBlock.EXTENDED)) {
+            return false;
+        }
+        Direction facing = state.getValue(PistonBaseBlock.FACING);
+        return facing == this.layout.getPrimingFacing() || facing == this.layout.getExecuteFacing();
     }
 
     private boolean hasOwnedTorchPowerSource() {
@@ -1061,11 +1085,16 @@ public class BedrockTarget {
         if (this.torchSupportPos == null) {
             return false;
         }
+        var state = level.getBlockState(this.torchSupportPos);
+        if (state.isAir()) {
+            return false;
+        }
         if (this.slimePos != null && this.torchSupportPos.equals(this.slimePos)) {
             return false;
         }
-        var state = level.getBlockState(this.torchSupportPos);
-        if (state.isAir()) {
+        if (state.is(Blocks.SLIME_BLOCK)
+                && this.torchPlacement != null
+                && BedrockEnvironment.isTorchPlacementUsable(level, this.torchPlacement)) {
             return false;
         }
         return BedrockTargetBlocks.isCleanupResidue(state);

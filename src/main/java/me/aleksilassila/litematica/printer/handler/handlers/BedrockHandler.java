@@ -94,9 +94,10 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 .thenComparingDouble(CandidateInfo::distanceSqToPlayer));
 
         int limit = Math.min(candidates.size(), CANDIDATE_SOFT_CAP);
-        List<BlockPos> filtered = new ArrayList<>(limit);
-        for (int i = 0; i < limit; i++) {
-            filtered.add(candidates.get(i).pos());
+        List<CandidateInfo> selectedCandidates = selectNonConflictingCandidates(candidates, limit);
+        List<BlockPos> filtered = new ArrayList<>(selectedCandidates.size());
+        for (CandidateInfo candidate : selectedCandidates) {
+            filtered.add(candidate.pos());
         }
         return filtered;
     }
@@ -132,7 +133,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     private CandidateInfo buildCandidate(BlockPos pos) {
         if (this.level == null) {
-            return new CandidateInfo(pos, Integer.MAX_VALUE, Integer.MAX_VALUE, Double.MAX_VALUE);
+            return new CandidateInfo(pos, null, null, List.of(), List.of(), Integer.MAX_VALUE, Integer.MAX_VALUE, Double.MAX_VALUE);
         }
 
         BedrockMachineLayout layout = BedrockMachineLayout.find(this.level, pos);
@@ -140,7 +141,16 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         int priority = candidatePriority(pos, layout, placement);
         int neighborTargetCount = neighborTargetCount(pos);
         double distanceSqToPlayer = distanceSqToPlayer(pos);
-        return new CandidateInfo(pos, priority, neighborTargetCount, distanceSqToPlayer);
+        return new CandidateInfo(
+                pos,
+                layout,
+                placement,
+                buildStructuralPositions(pos, layout),
+                buildPowerReservationPositions(placement),
+                priority,
+                neighborTargetCount,
+                distanceSqToPlayer
+        );
     }
 
     private int candidatePriority(BlockPos pos, BedrockMachineLayout layout, BedrockTorchPlacement placement) {
@@ -159,12 +169,106 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                     penalty += 200;
                 }
             }
+            penalty += BedrockController.getPredictedMachineOverlapPenalty(pos, layout, placement);
             return penalty;
         }
         if (BedrockMachineLayout.shouldDeferUntilExposed(this.level, pos)) {
             return controllerPenalty + 1_000;
         }
         return controllerPenalty + 10_000;
+    }
+
+    private List<CandidateInfo> selectNonConflictingCandidates(List<CandidateInfo> candidates, int limit) {
+        if (limit <= 0 || candidates.isEmpty()) {
+            return List.of();
+        }
+        List<CandidateInfo> selected = new ArrayList<>(limit);
+        for (CandidateInfo candidate : candidates) {
+            if (selected.size() >= limit) {
+                break;
+            }
+            if (conflictsWithSelected(candidate, selected)) {
+                continue;
+            }
+            selected.add(candidate);
+        }
+        return selected;
+    }
+
+    private boolean conflictsWithSelected(CandidateInfo candidate, List<CandidateInfo> selected) {
+        for (CandidateInfo existing : selected) {
+            if (candidatesConflict(candidate, existing)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean candidatesConflict(CandidateInfo left, CandidateInfo right) {
+        if (left.layout() == null || right.layout() == null) {
+            return false;
+        }
+        if (intersects(left.structuralPositions(), right.structuralPositions())
+                || intersects(left.structuralPositions(), right.powerReservationPositions())
+                || intersects(left.powerReservationPositions(), right.structuralPositions())) {
+            return true;
+        }
+        if (left.placement() != null && right.placement() != null
+                && sameTorchPlacement(left.placement(), right.placement())) {
+            return false;
+        }
+        return isTorchPoweredBy(left.layout().getPistonPos(), right.placement())
+                || isTorchPoweredBy(right.layout().getPistonPos(), left.placement());
+    }
+
+    private boolean intersects(Iterable<BlockPos> left, Iterable<BlockPos> right) {
+        for (BlockPos leftPos : left) {
+            for (BlockPos rightPos : right) {
+                if (leftPos.equals(rightPos)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean sameTorchPlacement(BedrockTorchPlacement left, BedrockTorchPlacement right) {
+        return left.getClickedFace() == right.getClickedFace()
+                && left.getSupportPos() != null
+                && left.getSupportPos().equals(right.getSupportPos())
+                && left.getTorchPos() != null
+                && left.getTorchPos().equals(right.getTorchPos());
+    }
+
+    private boolean isTorchPoweredBy(BlockPos pistonPos, BedrockTorchPlacement placement) {
+        return pistonPos != null
+                && placement != null
+                && placement.getTorchPos() != null
+                && BedrockEnvironment.getTorchInfluencePositions(pistonPos).contains(placement.getTorchPos());
+    }
+
+    private List<BlockPos> buildStructuralPositions(BlockPos bedrockPos, BedrockMachineLayout layout) {
+        List<BlockPos> positions = new ArrayList<>(3);
+        positions.add(bedrockPos);
+        if (layout != null) {
+            positions.add(layout.getPistonPos());
+            positions.add(layout.getHeadPos());
+        }
+        return positions;
+    }
+
+    private List<BlockPos> buildPowerReservationPositions(BedrockTorchPlacement placement) {
+        if (placement == null) {
+            return List.of();
+        }
+        List<BlockPos> positions = new ArrayList<>(2);
+        if (placement.getSupportPos() != null) {
+            positions.add(placement.getSupportPos());
+        }
+        if (placement.getTorchPos() != null) {
+            positions.add(placement.getTorchPos());
+        }
+        return positions;
     }
 
     private BedrockTorchPlacement findPlacement(BedrockMachineLayout layout, BlockPos bedrockPos) {
@@ -217,7 +321,16 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         );
     }
 
-    private record CandidateInfo(BlockPos pos, int priority, int neighborTargetCount, double distanceSqToPlayer) {
+    private record CandidateInfo(
+            BlockPos pos,
+            BedrockMachineLayout layout,
+            BedrockTorchPlacement placement,
+            List<BlockPos> structuralPositions,
+            List<BlockPos> powerReservationPositions,
+            int priority,
+            int neighborTargetCount,
+            double distanceSqToPlayer
+    ) {
     }
 
 }
