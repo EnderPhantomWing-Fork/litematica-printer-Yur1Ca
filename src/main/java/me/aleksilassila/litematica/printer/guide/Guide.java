@@ -44,8 +44,8 @@ public abstract class Guide extends BlockStateUtils {
             return this.onBuildActionCorrect(state);
         }
 
-        // 方块无法在此位置自然存活，跳过
-        if (!requiredState.canSurvive(level, blockPos)) {
+        // 水相关方块由 WaterGuide 特判处理，不能在这里提前拦掉
+        if (!BlockStateUtils.isWaterBlock(requiredState) && !requiredState.canSurvive(level, blockPos)) {
             return Result.PASS;
         }
 

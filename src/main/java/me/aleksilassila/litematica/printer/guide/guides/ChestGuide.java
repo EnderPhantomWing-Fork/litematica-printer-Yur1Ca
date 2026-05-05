@@ -54,8 +54,8 @@ public class ChestGuide extends Guide {
         // 双箱子：不潜行放置，让 Minecraft 自动合并
         // 无论另一半是否已放，都不能潜行，否则会阻止合并
         Direction partnerDir = chestType == ChestType.LEFT
-                ? facing.getCounterClockWise()
-                : facing.getClockWise();
+                ? facing.getClockWise()
+                : facing.getCounterClockWise();
 
         Map<Direction, Vec3> clickSides = new HashMap<>(noChestSides);
         clickSides.put(partnerDir, Vec3.ZERO);  // 也允许从另一半方向点击
