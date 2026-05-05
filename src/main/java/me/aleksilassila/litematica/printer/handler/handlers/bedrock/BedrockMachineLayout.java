@@ -30,13 +30,21 @@ public final class BedrockMachineLayout {
         if (level == null || bedrockPos == null) {
             return null;
         }
+        BedrockMachineLayout naturalSupportLayout = findLayout(level, bedrockPos, false);
+        if (naturalSupportLayout != null) {
+            return naturalSupportLayout;
+        }
+        return findLayout(level, bedrockPos, true);
+    }
+
+    private static BedrockMachineLayout findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback) {
         for (Direction direction : SEARCH_ORDER) {
             BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
             if (!BedrockEnvironment.hasRoomForPiston(level, layout.getPistonPos(), layout.getPistonOffset())) {
                 continue;
             }
             BedrockTorchPlacement torchPlacement = BedrockEnvironment.findTorchPlacement(level, layout.getPistonPos(), layout.getPistonOffset().getOpposite(), bedrockPos, layout.getPistonPos(), layout.getHeadPos());
-            if (torchPlacement == null) {
+            if (torchPlacement == null && allowSlimeFallback) {
                 torchPlacement = BedrockEnvironment.findPossibleSlimeTorchPlacement(level, layout.getPistonPos(), layout.getPistonOffset().getOpposite(), bedrockPos, layout.getPistonPos(), layout.getHeadPos());
             }
             if (torchPlacement == null) {

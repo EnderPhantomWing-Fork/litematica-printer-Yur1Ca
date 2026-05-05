@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockContr
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEnvironment;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockMachineLayout;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory;
+import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTorchPlacement;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTargetBlocks;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -14,6 +15,7 @@ import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class BedrockHandler extends ClientPlayerTickHandler {
     private static final Direction[] NEIGHBOR_DIRECTIONS = Direction.values();
-    private static final int CANDIDATE_SOFT_CAP = 192;
+    private static final int CANDIDATE_SOFT_CAP = 256;
 
     public BedrockHandler() {
         super("bedrock", PrintModeType.BEDROCK, Configs.Hotkeys.BEDROCK, null, true);
@@ -134,23 +136,30 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         }
 
         BedrockMachineLayout layout = BedrockMachineLayout.find(this.level, pos);
-        int priority = candidatePriority(pos, layout);
+        BedrockTorchPlacement placement = layout == null ? null : findPlacement(layout, pos);
+        int priority = candidatePriority(pos, layout, placement);
         int neighborTargetCount = neighborTargetCount(pos);
         double distanceSqToPlayer = distanceSqToPlayer(pos);
         return new CandidateInfo(pos, priority, neighborTargetCount, distanceSqToPlayer);
     }
 
-    private int candidatePriority(BlockPos pos, BedrockMachineLayout layout) {
+    private int candidatePriority(BlockPos pos, BedrockMachineLayout layout, BedrockTorchPlacement placement) {
         if (this.level == null) {
             return Integer.MAX_VALUE;
         }
         int controllerPenalty = BedrockController.getSchedulingPenalty(pos);
         if (layout != null) {
-            int penalty = 0;
-            if (hasSlimeFallback(layout, pos)) {
-                penalty += 10;
+            int penalty = controllerPenalty;
+            penalty += BedrockController.getSchedulingPenalty(layout.getPistonPos());
+            penalty += BedrockController.getSchedulingPenalty(layout.getHeadPos());
+            if (placement != null) {
+                penalty += BedrockController.getSchedulingPenalty(placement.getSupportPos());
+                penalty += BedrockController.getSchedulingPenalty(placement.getTorchPos());
+                if (this.level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)) {
+                    penalty += 200;
+                }
             }
-            return controllerPenalty + penalty;
+            return penalty;
         }
         if (BedrockMachineLayout.shouldDeferUntilExposed(this.level, pos)) {
             return controllerPenalty + 1_000;
@@ -158,18 +167,29 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         return controllerPenalty + 10_000;
     }
 
-    private boolean hasSlimeFallback(BedrockMachineLayout layout, BlockPos bedrockPos) {
+    private BedrockTorchPlacement findPlacement(BedrockMachineLayout layout, BlockPos bedrockPos) {
         if (this.level == null || layout == null) {
-            return false;
+            return null;
         }
-        return BedrockEnvironment.findTorchPlacement(
+        BedrockTorchPlacement placement = BedrockEnvironment.findTorchPlacement(
                 this.level,
                 layout.getPistonPos(),
                 layout.getPistonOffset().getOpposite(),
                 bedrockPos,
                 layout.getPistonPos(),
                 layout.getHeadPos()
-        ) == null;
+        );
+        if (placement != null) {
+            return placement;
+        }
+        return BedrockEnvironment.findPossibleSlimeTorchPlacement(
+                this.level,
+                layout.getPistonPos(),
+                layout.getPistonOffset().getOpposite(),
+                bedrockPos,
+                layout.getPistonPos(),
+                layout.getHeadPos()
+        );
     }
 
     private int neighborTargetCount(BlockPos pos) {

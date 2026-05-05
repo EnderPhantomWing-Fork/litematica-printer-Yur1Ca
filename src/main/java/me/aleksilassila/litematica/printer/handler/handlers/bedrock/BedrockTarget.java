@@ -9,6 +9,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 
 import java.util.LinkedHashSet;
+import java.util.Objects;
 import java.util.Set;
 
 public class BedrockTarget {
@@ -166,7 +167,7 @@ public class BedrockTarget {
                             + " reason=place_piston_failed");
                     break;
                 }
-                if (this.torchSupportPos != null) {
+                if (this.torchSupportPos != null && !hasOwnedTorchPowerSource()) {
                     if (!placeTorch()) {
                         BedrockDebugLog.write("target initialize deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                                 + " reason=place_torch_failed");
@@ -328,6 +329,33 @@ public class BedrockTarget {
         return positions;
     }
 
+    public Set<BlockPos> getStructuralPositions() {
+        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
+        positions.add(this.bedrockPos);
+        positions.add(this.pistonPos);
+        positions.add(this.headPos);
+        for (BlockPos tempPos : this.tempBlocks) {
+            if (!isPowerReservationPosition(tempPos)) {
+                positions.add(tempPos);
+            }
+        }
+        return positions;
+    }
+
+    public Set<BlockPos> getPowerReservationPositions() {
+        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
+        if (this.torchSupportPos != null) {
+            positions.add(this.torchSupportPos);
+        }
+        if (getTorchPos() != null) {
+            positions.add(getTorchPos());
+        }
+        if (this.slimePos != null) {
+            positions.add(this.slimePos);
+        }
+        return positions;
+    }
+
     public Set<BlockPos> getReservedPositions() {
         LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
         positions.add(this.bedrockPos);
@@ -344,6 +372,36 @@ public class BedrockTarget {
         }
         positions.addAll(this.tempBlocks);
         return positions;
+    }
+
+    public boolean sharesTorchPlacementWith(BedrockTarget other) {
+        return other != null && matchesTorchPlacement(other.torchPlacement);
+    }
+
+    public boolean matchesTorchPlacement(BedrockTorchPlacement placement) {
+        if (this.torchPlacement == null || placement == null) {
+            return false;
+        }
+        return this.torchPlacement.getClickedFace() == placement.getClickedFace()
+                && Objects.equals(this.torchPlacement.getSupportPos(), placement.getSupportPos())
+                && Objects.equals(this.torchPlacement.getTorchPos(), placement.getTorchPos());
+    }
+
+    public boolean isTorchPoweredBy(BlockPos torchPos) {
+        return torchPos != null && BedrockEnvironment.getTorchInfluencePositions(this.pistonPos).contains(torchPos);
+    }
+
+    public boolean canReusePowerReservation(BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (pos == null || state == null || state.isAir()) {
+            return false;
+        }
+        BlockPos torchPos = getTorchPos();
+        if (pos.equals(torchPos)) {
+            return isExpectedTorchState(state);
+        }
+        return this.slimePos != null
+                && pos.equals(this.slimePos)
+                && state.is(Blocks.SLIME_BLOCK);
     }
 
     public Set<BlockPos> getStaticMachinePositions() {
@@ -384,11 +442,18 @@ public class BedrockTarget {
         }
     }
 
+    private boolean isPowerReservationPosition(BlockPos pos) {
+        return pos != null
+                && (pos.equals(this.torchSupportPos)
+                || pos.equals(getTorchPos())
+                || pos.equals(this.slimePos));
+    }
+
     private boolean canBuildInitialMachine() {
         if (!BedrockInventory.hasAtLeast(Blocks.PISTON.asItem(), 1)) {
             return false;
         }
-        if (!BedrockInventory.hasAtLeast(Blocks.REDSTONE_TORCH.asItem(), 1)) {
+        if (!hasOwnedTorchPowerSource() && !BedrockInventory.hasAtLeast(Blocks.REDSTONE_TORCH.asItem(), 1)) {
             return false;
         }
         if (this.slimePos != null && !level.getBlockState(this.slimePos).is(Blocks.SLIME_BLOCK)
@@ -818,10 +883,7 @@ public class BedrockTarget {
         if (placement == null) {
             return false;
         }
-        BlockPos supportPos = placement.getSupportPos();
-        BlockPos torchPos = placement.getTorchPos();
-        return BedrockController.isPositionReservedByOtherTarget(supportPos, this)
-                || BedrockController.isPositionReservedByOtherTarget(torchPos, this);
+        return BedrockController.isTorchPlacementReservedByOtherTarget(placement, this);
     }
 
     private void resetPostExecuteAttempt(String reason, Status recoveryStatus) {
@@ -838,9 +900,9 @@ public class BedrockTarget {
         this.tickTimes = 0;
         this.hasTried = false;
         this.stuckTicksCounter = 0;
+        this.lastRepowerTick = -1;
         this.executeTick = -1;
         this.initializeTick = -1;
-        this.lastRepowerTick = -1;
         this.lastPostExecuteResidueCleanupTick = -1;
         this.lastPollutedMachineCleanupTick = -1;
     }

@@ -29,8 +29,9 @@ public final class BedrockController {
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
-    private static final int CLEANUP_LIMIT_PER_TICK = 48;
+    private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int ACCEPT_BACKPRESSURE_TICKS = 1;
+    private static final int HOTSPOT_SKIP_PENALTY = 120;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
@@ -163,6 +164,13 @@ public final class BedrockController {
         return penalty;
     }
 
+    public static boolean shouldSkipSchedulingHotspot(BlockPos pos) {
+        if (cleanupPressureThisTick < getMediumCleanupPressureThreshold()) {
+            return false;
+        }
+        return getSchedulingPenalty(pos) >= HOTSPOT_SKIP_PENALTY;
+    }
+
     public static boolean submit(BlockPos pos) {
         ClientLevel level = CLIENT.level;
         if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos))) return false;
@@ -188,12 +196,14 @@ public final class BedrockController {
 
         BlockPos pendingCleanupPos = findPendingCleanupConflict(target);
         if (pendingCleanupPos != null) {
-            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            var blockingState = level.getBlockState(pendingCleanupPos);
+            expeditePendingCleanup(pendingCleanupPos, blockingState);
+            setRetryCooldown(pos, getPendingCleanupRetryTicks(blockingState));
             noteSubmitRejected("pending_cleanup", pos, pendingCleanupPos);
             BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
                     + " reason=pending_cleanup"
                     + " blockingPos=" + BedrockDebugLog.pos(pendingCleanupPos)
-                    + " blockingState=" + BedrockDebugLog.describeState(level.getBlockState(pendingCleanupPos)));
+                    + " blockingState=" + BedrockDebugLog.describeState(blockingState));
             return false;
         }
 
@@ -241,7 +251,7 @@ public final class BedrockController {
         if (CLEANUP_QUEUE.isEmpty()) return;
 
         reorderCleanupQueue();
-        int limit = CLEANUP_LIMIT_PER_TICK;
+        int limit = getCleanupLimitPerTick();
         int count = 0;
         Iterator<BlockPos> iterator = CLEANUP_QUEUE.iterator();
 
@@ -289,13 +299,9 @@ public final class BedrockController {
     }
 
     private static BedrockTarget findConflictTarget(BedrockTarget candidate) {
-        Set<BlockPos> candidateFootprint = candidate.getMachineFootprint();
         for (BedrockTarget existing : TARGETS) {
-            Set<BlockPos> existingFootprint = existing.getMachineFootprint();
-            for (BlockPos pos : candidateFootprint) {
-                if (existingFootprint.contains(pos)) {
-                    return existing;
-                }
+            if (hasStructuralConflict(candidate, existing) || hasPowerConflict(candidate, existing)) {
+                return existing;
             }
         }
         return null;
@@ -313,6 +319,9 @@ public final class BedrockController {
             if (state.isAir()) {
                 CLEANUP_QUEUE.remove(pos);
                 CONSERVATIVE_CLEANUP.remove(pos);
+                continue;
+            }
+            if (canReuseBlockingPosition(candidate, pos, state)) {
                 continue;
             }
             if (CLEANUP_QUEUE.contains(pos)) {
@@ -342,6 +351,50 @@ public final class BedrockController {
             positions.add(candidate.getSlimePos());
         }
         return positions;
+    }
+
+    private static boolean hasStructuralConflict(BedrockTarget candidate, BedrockTarget existing) {
+        Set<BlockPos> candidateStructural = candidate.getStructuralPositions();
+        Set<BlockPos> existingStructural = existing.getStructuralPositions();
+        for (BlockPos pos : candidateStructural) {
+            if (existingStructural.contains(pos) || existing.getPowerReservationPositions().contains(pos)) {
+                return true;
+            }
+        }
+        for (BlockPos pos : candidate.getPowerReservationPositions()) {
+            if (existingStructural.contains(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasPowerConflict(BedrockTarget candidate, BedrockTarget existing) {
+        if (candidate.sharesTorchPlacementWith(existing)) {
+            return false;
+        }
+        BlockPos candidateTorchPos = candidate.getTorchPos();
+        if (candidateTorchPos != null && existing.isTorchPoweredBy(candidateTorchPos)) {
+            return true;
+        }
+        BlockPos existingTorchPos = existing.getTorchPos();
+        if (existingTorchPos != null && candidate.isTorchPoweredBy(existingTorchPos)) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean canReuseBlockingPosition(BedrockTarget candidate, BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (pos == null || state == null || state.isAir()) {
+            return false;
+        }
+        for (BedrockTarget target : TARGETS) {
+            if (!target.sharesTorchPlacementWith(candidate)) {
+                continue;
+            }
+            return candidate.canReusePowerReservation(pos, state);
+        }
+        return false;
     }
 
     private static int processTargets(ClientLevel level, int executeBudget, boolean priorityOnly, Set<BedrockTarget> processedTargets) {
@@ -518,6 +571,10 @@ public final class BedrockController {
         return !BedrockTargetBlocks.isTargetBlock(CLIENT.level.getBlockState(target.getBedrockPos()));
     }
 
+    private static int getCleanupLimitPerTick() {
+        return Math.max(BASE_CLEANUP_LIMIT_PER_TICK, getConfiguredThroughput() * 5);
+    }
+
     private static void cleanupBlockOrQueue(BlockPos pos, boolean predictRemoval) {
         if (pos == null) {
             return;
@@ -531,8 +588,10 @@ public final class BedrockController {
             BedrockDebugLog.write("cleanup deferred pos=" + BedrockDebugLog.pos(pos) + " reason=reserved_by_active_target");
             return;
         }
-        if (BedrockTargetBlocks.isCleanupResidue(CLIENT.level.getBlockState(pos))) {
+        var state = CLIENT.level.getBlockState(pos);
+        if (BedrockTargetBlocks.isCleanupResidue(state)) {
             BedrockBreaker.breakBlock(pos, predictRemoval);
+            CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, getCleanupRetryDelay(state));
         }
     }
 
@@ -577,12 +636,30 @@ public final class BedrockController {
             return 4;
         }
         if (state.is(net.minecraft.world.level.block.Blocks.MOVING_PISTON)) {
-            return 8;
+            return 6;
         }
         if (state.is(net.minecraft.world.level.block.Blocks.SLIME_BLOCK)) {
-            return 10;
+            return 8;
         }
         return 6;
+    }
+
+    private static void expeditePendingCleanup(BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (CLIENT.level == null || pos == null || state == null) {
+            return;
+        }
+        if (!BedrockTargetBlocks.isCleanupResidue(state) || isReservedByActiveTarget(pos)) {
+            return;
+        }
+        if (CooldownUtils.INSTANCE.isOnCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos)) {
+            return;
+        }
+        int retryDelay = getCleanupRetryDelay(state);
+        BedrockBreaker.breakBlock(pos, false);
+        CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, retryDelay);
+        BedrockDebugLog.write("cleanup expedite pos=" + BedrockDebugLog.pos(pos)
+                + " state=" + BedrockDebugLog.describeState(state)
+                + " retryDelay=" + retryDelay);
     }
 
     private static int sampleCleanupPressure(ClientLevel level) {
@@ -624,6 +701,25 @@ public final class BedrockController {
                 continue;
             }
             if (target.getReservedPositions().contains(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean isTorchPlacementReservedByOtherTarget(BedrockTorchPlacement placement, BedrockTarget self) {
+        if (placement == null) {
+            return false;
+        }
+        for (BedrockTarget target : TARGETS) {
+            if (target == self) {
+                continue;
+            }
+            if (target.matchesTorchPlacement(placement)) {
+                continue;
+            }
+            if (target.getReservedPositions().contains(placement.getSupportPos())
+                    || target.getReservedPositions().contains(placement.getTorchPos())) {
                 return true;
             }
         }
@@ -673,6 +769,11 @@ public final class BedrockController {
     }
 
     private static int getSubmitRejectWeight(String reason) {
+        if (cleanupPressureThisTick < getMediumCleanupPressureThreshold()) {
+            if ("machine_overlap".equals(reason) || "pending_cleanup".equals(reason)) {
+                return 0;
+            }
+        }
         if ("machine_overlap".equals(reason) && cleanupPressureThisTick <= 0) {
             return 0;
         }
@@ -680,7 +781,11 @@ public final class BedrockController {
     }
 
     private static int getSubmitRejectBudget() {
-        return Math.max(8, getConfiguredThroughput() / 2);
+        return Math.max(8, getConfiguredThroughput());
+    }
+
+    private static int getPendingCleanupRetryTicks(net.minecraft.world.level.block.state.BlockState blockingState) {
+        return Math.max(SUBMIT_RETRY_COOLDOWN_TICKS, getCleanupRetryDelay(blockingState) + 2);
     }
 
     private static int getSchedulingProbePenalty(BlockPos pos) {
