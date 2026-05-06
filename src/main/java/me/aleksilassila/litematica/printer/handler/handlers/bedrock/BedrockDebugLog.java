@@ -88,7 +88,7 @@ public final class BedrockDebugLog {
         if (legacy != null) {
             return Boolean.parseBoolean(legacy);
         }
-        return false;
+        return true;
     }
 
     private static String resolveMode() {

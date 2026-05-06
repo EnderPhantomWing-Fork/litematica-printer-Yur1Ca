@@ -40,6 +40,7 @@ public final class BedrockBreaker {
             BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_effective_tool");
             return false;
         }
+        BedrockInventory.syncSelectedHotbarSlot();
 
         BedrockDebugLog.write("break start pos=" + BedrockDebugLog.pos(pos)
                 + " state=" + BedrockDebugLog.describeState(state)
@@ -48,7 +49,7 @@ public final class BedrockBreaker {
                 + " tool=" + CLIENT.player.getMainHandItem().getItem()
                 + " predictRemoval=" + predictRemoval);
 
-        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval()) {
+        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && isRemoteServerConnection()) {
             gameModeExtension.litematica_printer$continueDestroyBlock(false, pos, direction);
         }
 
@@ -78,21 +79,21 @@ public final class BedrockBreaker {
         //$$ ));
         //#endif
 
-        // For sync-sensitive targets we wait for the server/chunk refresh instead of
-        // forcing the client state ahead, which can otherwise stall the state machine.
-        boolean allowPrediction = predictRemoval && shouldPredictRemoval();
-        if (predictRemoval && !allowPrediction) {
+        // Callers pass predictRemoval=false for sync-sensitive targets. Normal
+        // machine blocks can be predicted locally even on remote servers so latency
+        // does not stall the bedrock state machine.
+        if (!predictRemoval) {
             BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
-                    + " reason=server_connection");
+                    + " reason=caller_requires_server_sync");
         }
-        if (allowPrediction) {
+        if (predictRemoval) {
             CLIENT.level.removeBlock(pos, false);
         }
 
         return true;
     }
 
-    private static boolean shouldPredictRemoval() {
-        return CLIENT.getConnection() == null || CLIENT.getSingleplayerServer() != null;
+    private static boolean isRemoteServerConnection() {
+        return CLIENT.getConnection() != null && CLIENT.getSingleplayerServer() == null;
     }
 }

@@ -1,10 +1,12 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.effect.MobEffectUtil;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -23,6 +25,7 @@ import java.util.Optional;
 
 public final class BedrockInventory {
     private static final Minecraft CLIENT = Minecraft.getInstance();
+    private static long lastOffhandSwapTick = Long.MIN_VALUE;
 
     private BedrockInventory() {
     }
@@ -59,6 +62,25 @@ public final class BedrockInventory {
         return InventoryUtils.setItemToOffhand(new ItemStack(item), CLIENT);
     }
 
+    public static boolean prepareOffhandForPlacement(Item item) {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || item == null) {
+            return false;
+        }
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        if (player.getOffhandItem().getItem() == item) {
+            return now != lastOffhandSwapTick;
+        }
+        if (now == lastOffhandSwapTick) {
+            return false;
+        }
+        if (!switchToOffhand(item)) {
+            return false;
+        }
+        lastOffhandSwapTick = now;
+        return false;
+    }
+
     public static boolean switchToBestTool(BlockState blockState) {
         LocalPlayer player = CLIENT.player;
         if (player == null || blockState == null || blockState.isAir()) {
@@ -77,6 +99,18 @@ public final class BedrockInventory {
 
         ItemStack bestStack = findBestCleanupBreakingStack(player, blockState);
         return switchToResolvedTool(player, bestStack);
+    }
+
+    public static void syncSelectedHotbarSlot() {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || CLIENT.getConnection() == null) {
+            return;
+        }
+
+        int selectedSlot = InventoryUtils.getSelectedSlot(player.getInventory());
+        if (Inventory.isHotbarSlot(selectedSlot)) {
+            CLIENT.getConnection().send(new ServerboundSetCarriedItemPacket(selectedSlot));
+        }
     }
 
     public static boolean hasAtLeast(Item item, int count) {

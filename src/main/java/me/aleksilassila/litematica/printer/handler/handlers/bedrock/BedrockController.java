@@ -33,6 +33,8 @@ public final class BedrockController {
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
     private static final int ACCEPT_BACKPRESSURE_TICKS = 1;
     private static final int HOTSPOT_SKIP_PENALTY = 120;
+    private static final int REMOTE_ACTIVE_PIPELINE_MULTIPLIER = 3;
+    private static final int REMOTE_ACTIVE_PIPELINE_BONUS_CAP = 12;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
@@ -364,7 +366,7 @@ public final class BedrockController {
                 CONSERVATIVE_CLEANUP.remove(pos);
                 continue;
             }
-            if (candidate.canReusePendingCleanupPosition(pos, state) || canReuseBlockingPosition(candidate, pos, state)) {
+            if (candidate.canReusePendingCleanupPosition(pos, state)) {
                 continue;
             }
             if (CLEANUP_QUEUE.contains(pos)) {
@@ -409,7 +411,7 @@ public final class BedrockController {
             }
         }
         for (BlockPos pos : candidate.getPowerReservationPositions()) {
-            if (existingStructural.contains(pos)) {
+            if (existingStructural.contains(pos) || existing.getPowerReservationPositions().contains(pos)) {
                 return true;
             }
         }
@@ -418,7 +420,7 @@ public final class BedrockController {
 
     private static boolean hasPowerConflict(BedrockTarget candidate, BedrockTarget existing) {
         if (candidate.sharesTorchPlacementWith(existing)) {
-            return false;
+            return true;
         }
         BlockPos candidateTorchPos = candidate.getTorchPos();
         if (candidateTorchPos != null && existing.isTorchPoweredBy(candidateTorchPos)) {
@@ -427,19 +429,6 @@ public final class BedrockController {
         BlockPos existingTorchPos = existing.getTorchPos();
         if (existingTorchPos != null && candidate.isTorchPoweredBy(existingTorchPos)) {
             return true;
-        }
-        return false;
-    }
-
-    private static boolean canReuseBlockingPosition(BedrockTarget candidate, BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
-        if (pos == null || state == null || state.isAir()) {
-            return false;
-        }
-        for (BedrockTarget target : TARGETS) {
-            if (!target.sharesTorchPlacementWith(candidate)) {
-                continue;
-            }
-            return candidate.canReusePowerReservation(pos, state);
         }
         return false;
     }
@@ -473,7 +462,7 @@ public final class BedrockController {
                 continue;
             }
 
-            boolean activeStatus = countsTowardsActiveCap(target.getStatus());
+            boolean activeStatus = consumesExecuteBudget(target.getStatus());
             BedrockTarget.Status status;
             boolean hadBudget = activeStatus && executeBudget > 0;
             if (hadBudget) {
@@ -546,7 +535,11 @@ public final class BedrockController {
     }
 
     private static int getActiveTargetCap() {
-        return getConfiguredThroughput();
+        int throughput = getConfiguredThroughput();
+        if (!isRemoteServerConnection()) {
+            return throughput;
+        }
+        return Math.min(throughput * REMOTE_ACTIVE_PIPELINE_MULTIPLIER, throughput + REMOTE_ACTIVE_PIPELINE_BONUS_CAP);
     }
 
     private static int getSubmitCap() {
@@ -564,6 +557,15 @@ public final class BedrockController {
     }
 
     private static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
+        return status == BedrockTarget.Status.UNINITIALIZED
+                || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
+                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE
+                || status == BedrockTarget.Status.EXTENDED
+                || status == BedrockTarget.Status.NEEDS_WAITING
+                || status == BedrockTarget.Status.RETRACTING;
+    }
+
+    private static boolean consumesExecuteBudget(BedrockTarget.Status status) {
         return status == BedrockTarget.Status.UNINITIALIZED
                 || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
                 || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE
@@ -618,6 +620,10 @@ public final class BedrockController {
 
     private static int getConfiguredThroughput() {
         return Math.max(1, Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue());
+    }
+
+    private static boolean isRemoteServerConnection() {
+        return CLIENT.getConnection() != null && CLIENT.getSingleplayerServer() == null;
     }
 
     private static int getLowCleanupPressureThreshold() {
@@ -787,9 +793,6 @@ public final class BedrockController {
             if (target == self) {
                 continue;
             }
-            if (target.matchesTorchPlacement(placement)) {
-                continue;
-            }
             if (target.getReservedPositions().contains(placement.getSupportPos())
                     || target.getReservedPositions().contains(placement.getTorchPos())) {
                 return true;
@@ -893,7 +896,7 @@ public final class BedrockController {
                 }
             }
             for (BlockPos pos : this.powerReservationPositions) {
-                if (targetStructural.contains(pos)) {
+                if (targetStructural.contains(pos) || targetPower.contains(pos)) {
                     return true;
                 }
             }

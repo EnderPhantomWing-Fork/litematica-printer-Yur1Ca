@@ -30,8 +30,8 @@ public final class BedrockPlacer {
             BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=no_player_or_gamemode");
             return false;
         }
-        if (!BedrockInventory.switchToOffhand(item)) {
-            BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=missing_item");
+        if (!BedrockInventory.prepareOffhandForPlacement(item)) {
+            BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=" + getPlacementItemWaitReason(item));
             return false;
         }
         PlayerLook look = new PlayerLook(clickedFace.getOpposite());
@@ -49,14 +49,23 @@ public final class BedrockPlacer {
         return true;
     }
 
+    public static boolean preparePiston(BlockPos pistonPos, Direction facing) {
+        if (!BedrockInventory.prepareOffhandForPlacement(Blocks.PISTON.asItem())) {
+            BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos)
+                    + " facing=" + facing
+                    + " reason=" + getPlacementItemWaitReason(Blocks.PISTON.asItem()));
+            return false;
+        }
+        return true;
+    }
+
     public static boolean placePiston(BlockPos pistonPos, Direction facing) {
         LocalPlayer player = CLIENT.player;
         if (player == null || CLIENT.gameMode == null) {
             BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=no_player_or_gamemode");
             return false;
         }
-        if (!BedrockInventory.switchToOffhand(Blocks.PISTON.asItem())) {
-            BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=missing_piston");
+        if (!preparePiston(pistonPos, facing)) {
             return false;
         }
 
@@ -83,6 +92,10 @@ public final class BedrockPlacer {
                 + " sentYaw=" + look.getYaw()
                 + " sentPitch=" + look.getPitch());
         return true;
+    }
+
+    private static String getPlacementItemWaitReason(Item item) {
+        return BedrockInventory.hasAtLeast(item, 1) ? "offhand_sync" : "missing_item";
     }
 
     private static void placeBlockAggressively(LocalPlayer player, BlockHitResult hitResult) {

@@ -378,7 +378,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     public static class Bedrock {
         public static final ConfigInteger BEDROCK_INTERVAL = integer("bedrockInterval")
-                .defaultValue(2)
+                .defaultValue(0)
                 .range(0, 20)
                 .build();
 

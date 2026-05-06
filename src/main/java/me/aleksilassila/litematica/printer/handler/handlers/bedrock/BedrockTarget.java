@@ -17,6 +17,7 @@ public class BedrockTarget {
     private static final int POWERED_STALL_RECOVERY_TICKS = 2;
     private static final int POST_EXECUTE_SYNC_TIMEOUT_TICKS = 16;
     private static final int INITIALIZE_SYNC_GRACE_TICKS = 2;
+    private static final int INITIALIZE_CONFIRM_TIMEOUT_TICKS = 6;
     private static final int POST_EXECUTE_AIR_SETTLE_TICKS = 4;
     private static final int POST_EXECUTE_RESIDUE_CLEANUP_INTERVAL_TICKS = 4;
     private static final int POLLUTED_MACHINE_CLEANUP_INTERVAL_TICKS = 4;
@@ -145,6 +146,8 @@ public class BedrockTarget {
             this.tickTimes++;
         } else if (this.status == Status.EXTENDED && allowExecute) {
             this.tickTimes++;
+        } else if (this.status == Status.UNINITIALIZED && this.initializeTick >= 0) {
+            this.tickTimes++;
         }
 
         updateStatus();
@@ -164,13 +167,16 @@ public class BedrockTarget {
                 }
                 if (!BedrockPlacer.placePiston(this.pistonPos, this.layout.getPrimingFacing())) {
                     BedrockDebugLog.write("target initialize deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
-                            + " reason=place_piston_failed");
+                            + " reason=place_piston_deferred");
                     break;
                 }
+                this.initializeTick = this.tickTimes;
+                this.initializedThisTick = true;
+                markThroughputAction("initialize_piston");
                 if (this.torchSupportPos != null && !hasOwnedTorchPowerSource()) {
                     if (!placeTorch()) {
                         BedrockDebugLog.write("target initialize deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
-                                + " reason=place_torch_failed");
+                                + " reason=place_torch_deferred");
                         break;
                     }
                 }
@@ -178,8 +184,6 @@ public class BedrockTarget {
                         + " piston=" + BedrockDebugLog.pos(this.pistonPos)
                         + " torchSupport=" + BedrockDebugLog.pos(this.torchSupportPos)
                         + " torch=" + BedrockDebugLog.pos(getTorchPos()));
-                this.initializeTick = this.tickTimes;
-                this.initializedThisTick = true;
                 markThroughputAction("initialize");
             }
             case EXTENDED -> {
@@ -193,6 +197,12 @@ public class BedrockTarget {
                             + " tick=" + this.tickTimes);
                     break;
                 }
+                if (!BedrockPlacer.preparePiston(this.pistonPos, this.layout.getExecuteFacing())) {
+                    BedrockDebugLog.write("target execute delayed bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                            + " tick=" + this.tickTimes
+                            + " reason=prepare_piston");
+                    break;
+                }
                 for (BlockPos torchPos : getOwnedTorchPositions()) {
                     BedrockBreaker.breakBlock(torchPos, Direction.DOWN, !this.conservativeSync);
                 }
@@ -200,9 +210,15 @@ public class BedrockTarget {
                 for (int offset = 1; offset < 6; offset++) {
                     recordTemp(this.pistonPos.relative(this.layout.getPistonOffset(), offset));
                 }
-                BedrockPlacer.placePiston(this.pistonPos, this.layout.getExecuteFacing());
+                if (!BedrockPlacer.placePiston(this.pistonPos, this.layout.getExecuteFacing())) {
+                    BedrockDebugLog.write("target execute delayed bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                            + " tick=" + this.tickTimes
+                            + " reason=place_execute_piston_deferred");
+                    break;
+                }
                 this.hasTried = true;
                 this.executeTick = this.tickTimes;
+                this.poweredStallRebuildCount = 0;
                 this.executedThisTick = true;
                 markThroughputAction("execute");
                 BedrockDebugLog.write("target execute bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
@@ -249,6 +265,12 @@ public class BedrockTarget {
                             + " rebuildCount=" + this.poweredStallRebuildCount);
                     return this.status;
                 }
+                if (!BedrockPlacer.preparePiston(this.pistonPos, this.layout.getPrimingFacing())) {
+                    BedrockDebugLog.write("target powered stall deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                            + " tick=" + this.tickTimes
+                            + " reason=prepare_piston");
+                    break;
+                }
 
                 for (BlockPos torchPos : getOwnedTorchPositions()) {
                     BedrockBreaker.breakBlock(torchPos, Direction.DOWN, !this.conservativeSync);
@@ -259,15 +281,16 @@ public class BedrockTarget {
                 if (!BedrockPlacer.placePiston(this.pistonPos, this.layout.getPrimingFacing())) {
                     BedrockDebugLog.write("target powered stall deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                             + " tick=" + this.tickTimes
-                            + " reason=replace_piston_failed");
+                            + " reason=replace_piston_deferred");
                     break;
                 }
+                this.initializeTick = this.tickTimes;
+                this.initializedThisTick = true;
+                markThroughputAction("powered_stall_rebuild_piston");
                 if (!tryRepowerTorch("powered_stall_rebuild")) {
                     break;
                 }
 
-                this.initializeTick = this.tickTimes;
-                this.initializedThisTick = true;
                 this.lastRepowerTick = this.tickTimes;
                 this.poweredStallRebuildCount++;
                 markThroughputAction("powered_stall_rebuild");
@@ -519,7 +542,7 @@ public class BedrockTarget {
             BedrockDebugLog.write("target repower deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                     + " torchSupport=" + BedrockDebugLog.pos(this.torchSupportPos)
                     + " tick=" + this.tickTimes
-                    + " reason=place_torch_failed"
+                    + " reason=place_torch_deferred"
                     + " context=" + reason);
             return false;
         }
@@ -834,7 +857,10 @@ public class BedrockTarget {
         if (!isPostExecuteCollapsed() || this.executeTick < 0) {
             return false;
         }
-        if (this.tickTimes - this.executeTick < POST_EXECUTE_AIR_SETTLE_TICKS) {
+        if (!BedrockTargetBlocks.isTargetBlock(level.getBlockState(this.bedrockPos))) {
+            return false;
+        }
+        if (this.tickTimes - this.executeTick < POST_EXECUTE_SYNC_TIMEOUT_TICKS) {
             return false;
         }
         if (hasStablePostExecuteResidue()) {
@@ -864,10 +890,22 @@ public class BedrockTarget {
     }
 
     private boolean shouldWaitForInitializeSettle() {
-        return !this.hasTried
-                && this.initializeTick >= 0
-                && this.tickTimes - this.initializeTick <= INITIALIZE_SYNC_GRACE_TICKS
-                && hasTransientMachineResidue();
+        if (this.hasTried || this.initializeTick < 0) {
+            return false;
+        }
+        int initializeAge = this.tickTimes - this.initializeTick;
+        if (initializeAge > INITIALIZE_CONFIRM_TIMEOUT_TICKS) {
+            return false;
+        }
+        if (hasTransientMachineResidue()) {
+            return true;
+        }
+        if (level.getBlockState(this.pistonPos).isAir()) {
+            return true;
+        }
+        return initializeAge <= INITIALIZE_SYNC_GRACE_TICKS
+                && getTorchPos() != null
+                && !hasOwnedTorchPowerSource();
     }
 
     private boolean isTargetCompleted() {
@@ -911,13 +949,13 @@ public class BedrockTarget {
     }
 
     private void resetPostExecuteAttempt(String reason, Status recoveryStatus) {
-        clearPostExecuteAttemptState();
         BedrockDebugLog.write("target recover bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
                 + " tick=" + this.tickTimes
                 + " status=" + recoveryStatus
                 + " reason=" + reason
                 + " pistonState=" + BedrockDebugLog.describePistonState(level.getBlockState(this.pistonPos))
                 + " interaction=" + buildInteractionSnapshot());
+        clearPostExecuteAttemptState();
     }
 
     private void clearPostExecuteAttemptState() {
@@ -925,6 +963,7 @@ public class BedrockTarget {
         this.hasTried = false;
         this.stuckTicksCounter = 0;
         this.lastRepowerTick = -1;
+        this.poweredStallRebuildCount = 0;
         this.executeTick = -1;
         this.initializeTick = -1;
         this.lastPostExecuteResidueCleanupTick = -1;

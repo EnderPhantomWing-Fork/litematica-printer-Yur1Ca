@@ -22,6 +22,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.shapes.CollisionContext;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -83,9 +84,11 @@ public class WaterGuide extends Guide {
      * 原版要求下方为阻挡运动的方块，或下方本身含有流体。
      */
     private boolean canIceBecomeWaterSource() {
-        BlockState belowState = level.getBlockState(blockPos.below());
+        BlockPos belowPos = blockPos.below();
+        BlockState belowState = level.getBlockState(belowPos);
         //#if MC > 11904
-        return belowState.blocksMotion() || !belowState.getFluidState().isEmpty();
+        return !belowState.getCollisionShape(level, belowPos, CollisionContext.empty()).isEmpty()
+                || !belowState.getFluidState().isEmpty();
         //#else
         //$$ return belowState.getMaterial().blocksMotion() || belowState.getMaterial().isLiquid();
         //#endif
