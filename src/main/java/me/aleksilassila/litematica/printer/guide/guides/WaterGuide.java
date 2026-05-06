@@ -18,6 +18,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -83,7 +84,11 @@ public class WaterGuide extends Guide {
      */
     private boolean canIceBecomeWaterSource() {
         BlockState belowState = level.getBlockState(blockPos.below());
+        //#if MC > 11904
         return belowState.blocksMotion() || !belowState.getFluidState().isEmpty();
+        //#else
+        //$$ return belowState.getMaterial().blocksMotion() || belowState.getMaterial().isLiquid();
+        //#endif
     }
 
     private void markWaitingForWaterSync() {
@@ -135,12 +140,18 @@ public class WaterGuide extends Guide {
         if (!itemPath.endsWith("_pickaxe")) {
             return false;
         }
+        //#if MC > 12006
         for (Holder<Enchantment> enchantment : stack.getEnchantments().keySet()) {
             Optional<ResourceKey<Enchantment>> enchantmentKey = enchantment.unwrapKey();
             if (enchantmentKey.isPresent() && enchantmentKey.get() == Enchantments.SILK_TOUCH) {
                 return false;
             }
         }
+        //#else
+        //$$ if (EnchantmentHelper.getItemEnchantmentLevel(Enchantments.SILK_TOUCH, stack) > 0) {
+        //$$     return false;
+        //$$ }
+        //#endif
         return true;
     }
 }
