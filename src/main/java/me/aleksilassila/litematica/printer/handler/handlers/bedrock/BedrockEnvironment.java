@@ -1,18 +1,35 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
+import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.RadiusShapeType;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RedstoneWallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class BedrockEnvironment {
+    private static final double SINGLEPLAYER_INTERACTION_GRACE = 2.0D;
+    private static final Direction[] PLACEMENT_DIRECTIONS = {
+            Direction.DOWN,
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.EAST,
+            Direction.WEST,
+            Direction.UP
+    };
+
     private BedrockEnvironment() {
     }
 
@@ -110,7 +127,11 @@ public final class BedrockEnvironment {
     }
 
     private static BedrockTorchPlacement findPreferredTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, boolean allowSlimeSupport, BlockPos... blockedPositions) {
-        BedrockTorchPlacement topFallback = null;
+        BedrockTorchPlacement bestInteractable = null;
+        int bestInteractableScore = Integer.MAX_VALUE;
+        BedrockTorchPlacement bestFallback = null;
+        int bestFallbackScore = Integer.MAX_VALUE;
+
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
             if (excludedAxis != null && direction == excludedAxis) {
                 continue;
@@ -119,15 +140,18 @@ public final class BedrockEnvironment {
             if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
                 continue;
             }
+            int score = scoreTorchPlacement(centerPos, placement, 0, allowSlimeSupport);
             if (isPlacementInteractable(placement, blockedPositions)) {
-                return placement;
-            }
-            if (topFallback == null) {
-                topFallback = placement;
+                if (score < bestInteractableScore) {
+                    bestInteractable = placement;
+                    bestInteractableScore = score;
+                }
+            } else if (score < bestFallbackScore) {
+                bestFallback = placement;
+                bestFallbackScore = score;
             }
         }
 
-        BedrockTorchPlacement wallFallback = null;
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
             if (excludedAxis != null && direction == excludedAxis) {
                 continue;
@@ -141,15 +165,19 @@ public final class BedrockEnvironment {
                 if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
                     continue;
                 }
+                int score = scoreTorchPlacement(centerPos, placement, 40, allowSlimeSupport);
                 if (isPlacementInteractable(placement, blockedPositions)) {
-                    return placement;
-                }
-                if (wallFallback == null) {
-                    wallFallback = placement;
+                    if (score < bestInteractableScore) {
+                        bestInteractable = placement;
+                        bestInteractableScore = score;
+                    }
+                } else if (score < bestFallbackScore) {
+                    bestFallback = placement;
+                    bestFallbackScore = score;
                 }
             }
         }
-        return topFallback != null ? topFallback : wallFallback;
+        return bestInteractable != null ? bestInteractable : bestFallback;
     }
 
     private static boolean isPlacementUsable(ClientLevel level, BedrockTorchPlacement placement, boolean allowSlimeSupport, BlockPos... blockedPositions) {
@@ -241,12 +269,70 @@ public final class BedrockEnvironment {
         return findFirstOutOfRangePosition(positions) == null;
     }
 
+    public static PlacementInteraction findPlacementInteraction(ClientLevel level, BlockPos placePos, BlockPos... preferredAnchors) {
+        List<PlacementInteraction> interactions = getPlacementInteractions(level, placePos, preferredAnchors);
+        if (interactions.isEmpty()) {
+            return null;
+        }
+
+        PlacementInteraction bestInteraction = null;
+        int bestScore = Integer.MAX_VALUE;
+        for (PlacementInteraction interaction : interactions) {
+            int score = scorePlacementInteraction(placePos, interaction);
+            if (score < bestScore) {
+                bestScore = score;
+                bestInteraction = interaction;
+            }
+        }
+        return bestInteraction;
+    }
+
+    public static List<PlacementInteraction> getPlacementInteractions(ClientLevel level, BlockPos placePos, BlockPos... preferredAnchors) {
+        List<PlacementInteraction> interactions = new ArrayList<>();
+        if (level == null || placePos == null) {
+            return interactions;
+        }
+
+        Set<BlockPos> seenAnchors = new LinkedHashSet<>();
+        if (preferredAnchors != null) {
+            for (BlockPos preferredAnchor : preferredAnchors) {
+                addPlacementInteraction(level, placePos, preferredAnchor, seenAnchors, interactions);
+            }
+        }
+
+        for (Direction direction : PLACEMENT_DIRECTIONS) {
+            addPlacementInteraction(level, placePos, placePos.relative(direction), seenAnchors, interactions);
+        }
+
+        return interactions;
+    }
+
+    public static boolean canInteract(BlockPos pos) {
+        if (pos == null || !isWithinBedrockWorkRange(pos)) {
+            return false;
+        }
+        if (!Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()) {
+            return true;
+        }
+
+        LocalPlayer player = ConfigUtils.client.player;
+        if (player == null) {
+            return false;
+        }
+
+        if (ConfigUtils.client.getSingleplayerServer() == null) {
+            return true;
+        }
+
+        return PlayerUtils.isWithinBlockInteractionRange(player, pos, SINGLEPLAYER_INTERACTION_GRACE);
+    }
+
     public static BlockPos findFirstOutOfRangePosition(BlockPos... positions) {
         if (positions == null) {
             return null;
         }
         for (BlockPos pos : positions) {
-            if (pos != null && !ConfigUtils.canInteracted(pos)) {
+            if (pos != null && !canInteract(pos)) {
                 return pos;
             }
         }
@@ -258,7 +344,7 @@ public final class BedrockEnvironment {
             return null;
         }
         for (BlockPos pos : positions) {
-            if (pos != null && !ConfigUtils.canInteracted(pos)) {
+            if (pos != null && !canInteract(pos)) {
                 return pos;
             }
         }
@@ -278,7 +364,112 @@ public final class BedrockEnvironment {
 
     private static boolean isPlacementInteractable(BedrockTorchPlacement placement, BlockPos... blockedPositions) {
         return placement != null
-                && arePositionsInteractable(blockedPositions)
-                && arePositionsInteractable(placement.getSupportPos(), placement.getTorchPos());
+                && arePositionsInteractable(placement.getSupportPos());
+    }
+
+    private static void addPlacementInteraction(ClientLevel level, BlockPos placePos, BlockPos anchorPos, Set<BlockPos> seenAnchors, List<PlacementInteraction> interactions) {
+        if (anchorPos == null || !seenAnchors.add(anchorPos)) {
+            return;
+        }
+        Direction clickedFace = getClickedFace(placePos, anchorPos);
+        if (clickedFace == null) {
+            return;
+        }
+        if (!isPlacementAnchorUsable(level, anchorPos, clickedFace)) {
+            return;
+        }
+        interactions.add(new PlacementInteraction(anchorPos, clickedFace));
+    }
+
+    private static Direction getClickedFace(BlockPos placePos, BlockPos anchorPos) {
+        int dx = placePos.getX() - anchorPos.getX();
+        int dy = placePos.getY() - anchorPos.getY();
+        int dz = placePos.getZ() - anchorPos.getZ();
+        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) != 1) {
+            return null;
+        }
+        if (dx == 1) {
+            return Direction.EAST;
+        }
+        if (dx == -1) {
+            return Direction.WEST;
+        }
+        if (dy == 1) {
+            return Direction.UP;
+        }
+        if (dy == -1) {
+            return Direction.DOWN;
+        }
+        if (dz == 1) {
+            return Direction.SOUTH;
+        }
+        if (dz == -1) {
+            return Direction.NORTH;
+        }
+        return null;
+    }
+
+    private static boolean isPlacementAnchorUsable(ClientLevel level, BlockPos anchorPos, Direction clickedFace) {
+        if (!isWithinBuildHeight(level, anchorPos) || !canInteract(anchorPos)) {
+            return false;
+        }
+        BlockState anchorState = level.getBlockState(anchorPos);
+        if (anchorState.isAir() || BlockUtils.isReplaceable(anchorState)) {
+            return false;
+        }
+        return anchorState.isFaceSturdy(level, anchorPos, clickedFace) || BlockUtils.canSupportCenter(level, anchorPos, clickedFace);
+    }
+
+    public static int scoreTorchPlacement(BlockPos centerPos, BedrockTorchPlacement placement, int placementTypePenalty, boolean slimePlacement) {
+        if (placement == null) {
+            return Integer.MAX_VALUE;
+        }
+        int score = placementTypePenalty;
+        score += scoreInteractionPosition(placement.getSupportPos()) * 3;
+        score += scoreInteractionPosition(placement.getTorchPos()) * 2;
+        score += Math.max(0, placement.getTorchPos() == null || centerPos == null ? 0 : placement.getTorchPos().getY() - centerPos.getY()) * 10;
+        if (slimePlacement) {
+            score += 80;
+        }
+        return score;
+    }
+
+    public static int scorePlacementInteraction(BlockPos placePos, PlacementInteraction interaction) {
+        if (placePos == null || interaction == null) {
+            return Integer.MAX_VALUE;
+        }
+        int score = scoreInteractionPosition(interaction.anchorPos()) * 4;
+        score += Math.max(0, placePos.getY() - interaction.anchorPos().getY()) * 12;
+        return score;
+    }
+
+    public static int scoreInteractionPosition(BlockPos pos) {
+        if (pos == null) {
+            return Integer.MAX_VALUE / 4;
+        }
+        int score = canInteract(pos) ? 0 : 1_000;
+        LocalPlayer player = ConfigUtils.client.player;
+        if (player == null) {
+            return score;
+        }
+        double distanceSq = player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos));
+        score += (int) Math.round(distanceSq * 2.0D);
+        score += Math.max(0, pos.getY() - player.blockPosition().getY()) * 8;
+        return score;
+    }
+
+    private static boolean isWithinBedrockWorkRange(BlockPos pos) {
+        double workRange = ConfigUtils.getWorkRange();
+        if (Configs.Core.ITERATOR_SHAPE.getOptionListValue() instanceof RadiusShapeType radiusShapeType) {
+            return switch (radiusShapeType) {
+                case SPHERE -> PlayerUtils.isWithinWorkInteractedEuclideanRange(pos, workRange);
+                case OCTAHEDRON -> PlayerUtils.isWithinWorkInteractedManhattanRange(pos, workRange);
+                case CUBE -> PlayerUtils.isWithinWorkInteractedCubeRange(pos, workRange);
+            };
+        }
+        return true;
+    }
+
+    public record PlacementInteraction(BlockPos anchorPos, Direction clickedFace) {
     }
 }

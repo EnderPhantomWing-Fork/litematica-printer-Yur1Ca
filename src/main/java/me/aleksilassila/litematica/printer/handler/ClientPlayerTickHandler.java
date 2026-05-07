@@ -188,7 +188,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                     if (Configs.Core.DEBUG_OUTPUT.getBooleanValue()) {
                         this.addGuiBlockInfoToQueue(gui);
                     }
-                    if (ConfigUtils.canInteracted(pos)) {
+                    if (this.canReachIterationPosition(pos)) {
                         gui.interacted = true;
                     } else {
                         gui.interacted = false;
@@ -324,6 +324,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
     protected boolean canIterate() {
         return true;
+    }
+
+    protected boolean canReachIterationPosition(BlockPos pos) {
+        return ConfigUtils.canInteracted(pos);
     }
 
     public boolean canIterationBlockPos(BlockPos pos) {

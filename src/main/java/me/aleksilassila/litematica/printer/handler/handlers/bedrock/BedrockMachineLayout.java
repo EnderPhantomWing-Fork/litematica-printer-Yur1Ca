@@ -38,6 +38,9 @@ public final class BedrockMachineLayout {
     }
 
     private static BedrockMachineLayout findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback) {
+        BedrockMachineLayout bestLayout = null;
+        int bestScore = Integer.MAX_VALUE;
+
         for (Direction direction : SEARCH_ORDER) {
             BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
             if (!BedrockEnvironment.hasRoomForPiston(level, layout.getPistonPos(), layout.getPistonOffset())) {
@@ -50,12 +53,26 @@ public final class BedrockMachineLayout {
             if (torchPlacement == null) {
                 continue;
             }
-            if (!BedrockEnvironment.arePositionsInteractable(bedrockPos, layout.getPistonPos(), layout.getHeadPos(), torchPlacement.getSupportPos(), torchPlacement.getTorchPos())) {
+            if (!BedrockEnvironment.arePositionsInteractable(torchPlacement.getSupportPos())) {
                 continue;
             }
-            return layout;
+            BedrockEnvironment.PlacementInteraction placementInteraction = BedrockEnvironment.findPlacementInteraction(
+                    level,
+                    layout.getPistonPos(),
+                    bedrockPos,
+                    torchPlacement.getSupportPos(),
+                    torchPlacement.getTorchPos()
+            );
+            if (placementInteraction == null) {
+                continue;
+            }
+            int score = scoreLayout(level, layout, torchPlacement, placementInteraction);
+            if (score < bestScore) {
+                bestScore = score;
+                bestLayout = layout;
+            }
         }
-        return null;
+        return bestLayout;
     }
 
     public static boolean shouldDeferUntilExposed(ClientLevel level, BlockPos bedrockPos) {
@@ -139,6 +156,32 @@ public final class BedrockMachineLayout {
         }
 
         return false;
+    }
+
+    private static int scoreLayout(ClientLevel level, BedrockMachineLayout layout, BedrockTorchPlacement torchPlacement, BedrockEnvironment.PlacementInteraction placementInteraction) {
+        boolean slimePlacement = level != null
+                && torchPlacement != null
+                && BedrockEnvironment.isSlimePlacementUsable(level, torchPlacement)
+                && !BedrockEnvironment.isTorchPlacementUsable(level, torchPlacement);
+        int score = directionPenalty(layout.getPistonOffset());
+        score += BedrockEnvironment.scoreInteractionPosition(layout.getPistonPos()) * 4;
+        score += BedrockEnvironment.scoreInteractionPosition(layout.getHeadPos());
+        score += BedrockEnvironment.scoreTorchPlacement(layout.getPistonPos(), torchPlacement, 0, slimePlacement);
+        score += BedrockEnvironment.scorePlacementInteraction(layout.getPistonPos(), placementInteraction);
+        return score;
+    }
+
+    private static int directionPenalty(Direction offset) {
+        if (offset == null) {
+            return Integer.MAX_VALUE / 4;
+        }
+        if (offset.getAxis().isHorizontal()) {
+            return 0;
+        }
+        if (offset == Direction.UP) {
+            return 80;
+        }
+        return 160;
     }
 
 }

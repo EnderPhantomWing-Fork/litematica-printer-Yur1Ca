@@ -28,6 +28,7 @@ public final class BedrockController {
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
+    private static final int NO_MACHINE_LAYOUT_RETRY_COOLDOWN_TICKS = 10;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
@@ -137,12 +138,6 @@ public final class BedrockController {
         if (isTargetOnRetryCooldown(pos)) return false;
         if (countActiveTargets() >= getActiveTargetCap()) return false;
         if (isReservedByActiveTarget(pos)) return false;
-        if (!ConfigUtils.canInteracted(pos)) {
-            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
-            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=out_of_range_bedrock");
-            return false;
-        }
         if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
             setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
@@ -214,7 +209,7 @@ public final class BedrockController {
             return false;
         }
         if (BedrockMachineLayout.find(level, pos) == null) {
-            setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
+            setRetryCooldown(pos, NO_MACHINE_LAYOUT_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
                     + " reason=no_machine_layout_available");
             return false;
@@ -226,7 +221,7 @@ public final class BedrockController {
             BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
             return false;
         }
-        BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
+        BlockPos outOfRangePos = target.findFirstOutOfRangeInteractionPosition();
         if (outOfRangePos != null) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
@@ -370,7 +365,7 @@ public final class BedrockController {
                 CONSERVATIVE_CLEANUP.remove(pos);
                 continue;
             }
-            if (candidate.canReusePendingCleanupPosition(pos, state) || canReuseBlockingPosition(candidate, pos, state)) {
+            if (candidate.canReusePendingCleanupPosition(pos, state)) {
                 continue;
             }
             if (CLEANUP_QUEUE.contains(pos)) {
@@ -426,9 +421,6 @@ public final class BedrockController {
         if (intersects(candidate.getPowerReservationPositions(), existing.getPowerReservationPositions())) {
             return true;
         }
-        if (candidate.sharesTorchPlacementWith(existing)) {
-            return false;
-        }
         BlockPos candidateTorchPos = candidate.getTorchPos();
         if (candidateTorchPos != null && existing.isTorchPoweredBy(candidateTorchPos)) {
             return true;
@@ -449,19 +441,6 @@ public final class BedrockController {
         return false;
     }
 
-    private static boolean canReuseBlockingPosition(BedrockTarget candidate, BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
-        if (pos == null || state == null || state.isAir()) {
-            return false;
-        }
-        for (BedrockTarget target : TARGETS) {
-            if (!target.sharesTorchPlacementWith(candidate)) {
-                continue;
-            }
-            return candidate.canReusePowerReservation(pos, state);
-        }
-        return false;
-    }
-
     private static int processTargets(ClientLevel level, int executeBudget, boolean priorityOnly, Set<BedrockTarget> processedTargets) {
         Iterator<BedrockTarget> iterator = TARGETS.iterator();
         while (iterator.hasNext()) {
@@ -473,18 +452,22 @@ public final class BedrockController {
             if (processedTargets.contains(target)) {
                 continue;
             }
-            BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
+            BlockPos outOfRangePos = target.findFirstOutOfRangeInteractionPosition();
             if (outOfRangePos != null) {
                 BedrockTarget.Status status = target.refreshStatusOnly();
+                int outOfRangeTicks = target.noteOutOfRange();
                 BedrockDebugLog.write("controller out_of_range bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
                         + " status=" + status
-                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
-                if (shouldRetireOutOfRange(status)) {
+                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos)
+                        + " outOfRangeTicks=" + outOfRangeTicks
+                        + " graceTicks=" + target.getOutOfRangeGraceTicks());
+                if (shouldRetireOutOfRange(target, status)) {
                     cleanupTarget(iterator, target, "out_of_range");
                 }
                 processedTargets.add(target);
                 continue;
             }
+            target.clearOutOfRange();
 
             boolean fastLane = isFastLaneStatus(target.getStatus());
             if (priorityOnly != fastLane) {
@@ -600,16 +583,11 @@ public final class BedrockController {
                 || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
     }
 
-    private static boolean shouldRetireOutOfRange(BedrockTarget.Status status) {
-        return status == BedrockTarget.Status.UNINITIALIZED
-                || status == BedrockTarget.Status.RETRACTED
+    private static boolean shouldRetireOutOfRange(BedrockTarget target, BedrockTarget.Status status) {
+        return status == BedrockTarget.Status.RETRACTED
                 || status == BedrockTarget.Status.FAILED
                 || status == BedrockTarget.Status.STUCK
-                || status == BedrockTarget.Status.EXTENDED
-                || status == BedrockTarget.Status.RETRACTING
-                || status == BedrockTarget.Status.NEEDS_WAITING
-                || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
-                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
+                || target.hasExceededOutOfRangeGrace();
     }
 
     private static boolean isStartupSerialPhase() {

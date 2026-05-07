@@ -59,13 +59,21 @@ public final class BedrockPlacer {
         return true;
     }
 
-    public static boolean placePiston(BlockPos pistonPos, Direction facing) {
+    public static boolean placePiston(BlockPos pistonPos, Direction facing, BlockPos... preferredAnchors) {
         LocalPlayer player = CLIENT.player;
-        if (player == null || CLIENT.gameMode == null) {
+        if (player == null || CLIENT.gameMode == null || CLIENT.level == null) {
             BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=no_player_or_gamemode");
             return false;
         }
         if (!preparePiston(pistonPos, facing)) {
+            return false;
+        }
+
+        BedrockEnvironment.PlacementInteraction placementInteraction = BedrockEnvironment.findPlacementInteraction(CLIENT.level, pistonPos, preferredAnchors);
+        if (placementInteraction == null) {
+            BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos)
+                    + " facing=" + facing
+                    + " reason=no_interactable_support");
             return false;
         }
 
@@ -76,11 +84,10 @@ public final class BedrockPlacer {
         NetworkUtils.sendLookPacket(player, look);
         syncLocalLook(player, look.getYaw(), look.getPitch());
 
-        BlockPos clickedPos = pistonPos.relative(facing.getOpposite());
         BlockHitResult hitResult = new BlockHitResult(
-                Vec3.atCenterOf(clickedPos),
-                facing,
-                clickedPos,
+                Vec3.atCenterOf(placementInteraction.anchorPos()),
+                placementInteraction.clickedFace(),
+                placementInteraction.anchorPos(),
                 false
         );
 
@@ -88,7 +95,8 @@ public final class BedrockPlacer {
         restoreLook(player);
         BedrockDebugLog.write("placePiston piston=" + BedrockDebugLog.pos(pistonPos)
                 + " facing=" + facing
-                + " clickedBlock=" + BedrockDebugLog.pos(clickedPos)
+                + " clickedBlock=" + BedrockDebugLog.pos(placementInteraction.anchorPos())
+                + " clickedFace=" + placementInteraction.clickedFace()
                 + " sentYaw=" + look.getYaw()
                 + " sentPitch=" + look.getPitch());
         return true;
