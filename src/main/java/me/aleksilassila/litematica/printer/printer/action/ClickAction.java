@@ -34,7 +34,7 @@ public class ClickAction extends Action {
      */
     @Override
     public @Nullable Direction getValidSide(ClientLevel world, BlockPos pos) {
-        for (Direction side : getSides().keySet()) {
+        for (Direction side : getOrderedSides()) {
             return side;
         }
         return null;

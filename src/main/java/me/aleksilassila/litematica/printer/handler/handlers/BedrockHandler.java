@@ -89,7 +89,8 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         }
 
         candidates.sort(Comparator
-                .comparingInt(CandidateInfo::priority)
+                .<CandidateInfo>comparingInt(candidate -> layoutPriority(candidate.layout()))
+                .thenComparingInt(CandidateInfo::priority)
                 .thenComparingInt(CandidateInfo::neighborTargetCount)
                 .thenComparingDouble(CandidateInfo::distanceSqToPlayer));
 
@@ -214,8 +215,26 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 || intersects(left.powerReservationPositions(), right.powerReservationPositions())) {
             return true;
         }
+        if (left.placement() != null && right.placement() != null
+                && sameTorchPlacement(left.placement(), right.placement())) {
+            return true;
+        }
         return isTorchPoweredBy(left.layout().getPistonPos(), right.placement())
                 || isTorchPoweredBy(right.layout().getPistonPos(), left.placement());
+    }
+
+    private int layoutPriority(BedrockMachineLayout layout) {
+        if (layout == null) {
+            return Integer.MAX_VALUE;
+        }
+        Direction offset = layout.getPistonOffset();
+        if (offset == Direction.UP) {
+            return 0;
+        }
+        if (offset == Direction.DOWN) {
+            return 2;
+        }
+        return 1;
     }
 
     private boolean intersects(Iterable<BlockPos> left, Iterable<BlockPos> right) {
@@ -227,13 +246,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             }
         }
         return false;
-    }
-
-    private boolean isTorchPoweredBy(BlockPos pistonPos, BedrockTorchPlacement placement) {
-        return pistonPos != null
-                && placement != null
-                && placement.getTorchPos() != null
-                && BedrockEnvironment.getTorchInfluencePositions(pistonPos).contains(placement.getTorchPos());
     }
 
     private List<BlockPos> buildStructuralPositions(BlockPos bedrockPos, BedrockMachineLayout layout) {
@@ -258,6 +270,21 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             positions.add(placement.getTorchPos());
         }
         return positions;
+    }
+
+    private boolean sameTorchPlacement(BedrockTorchPlacement left, BedrockTorchPlacement right) {
+        return left.getClickedFace() == right.getClickedFace()
+                && left.getSupportPos() != null
+                && left.getSupportPos().equals(right.getSupportPos())
+                && left.getTorchPos() != null
+                && left.getTorchPos().equals(right.getTorchPos());
+    }
+
+    private boolean isTorchPoweredBy(BlockPos pistonPos, BedrockTorchPlacement placement) {
+        return pistonPos != null
+                && placement != null
+                && placement.getTorchPos() != null
+                && BedrockEnvironment.getTorchInfluencePositions(pistonPos).contains(placement.getTorchPos());
     }
 
     private BedrockTorchPlacement findPlacement(BedrockMachineLayout layout, BlockPos bedrockPos) {

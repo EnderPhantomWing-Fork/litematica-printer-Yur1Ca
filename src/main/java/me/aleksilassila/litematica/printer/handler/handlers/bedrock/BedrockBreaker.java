@@ -49,7 +49,7 @@ public final class BedrockBreaker {
                 + " tool=" + CLIENT.player.getMainHandItem().getItem()
                 + " predictRemoval=" + predictRemoval);
 
-        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && isRemoteServerConnection()) {
+        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval()) {
             gameModeExtension.litematica_printer$continueDestroyBlock(false, pos, direction);
         }
 
@@ -79,21 +79,19 @@ public final class BedrockBreaker {
         //$$ ));
         //#endif
 
-        // Callers pass predictRemoval=false for sync-sensitive targets. Normal
-        // machine blocks can be predicted locally even on remote servers so latency
-        // does not stall the bedrock state machine.
-        if (!predictRemoval) {
+        boolean allowPrediction = predictRemoval && shouldPredictRemoval();
+        if (predictRemoval && !allowPrediction) {
             BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
-                    + " reason=caller_requires_server_sync");
+                    + " reason=server_connection");
         }
-        if (predictRemoval) {
+        if (allowPrediction) {
             CLIENT.level.removeBlock(pos, false);
         }
 
         return true;
     }
 
-    private static boolean isRemoteServerConnection() {
-        return CLIENT.getConnection() != null && CLIENT.getSingleplayerServer() == null;
+    private static boolean shouldPredictRemoval() {
+        return CLIENT.getConnection() == null || CLIENT.getSingleplayerServer() != null;
     }
 }

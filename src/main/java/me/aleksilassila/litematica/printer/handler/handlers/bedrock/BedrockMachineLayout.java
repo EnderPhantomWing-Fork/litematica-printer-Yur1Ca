@@ -65,17 +65,21 @@ public final class BedrockMachineLayout {
         if (find(level, bedrockPos) != null) {
             return false;
         }
+        boolean sawBlockedLayout = false;
         for (Direction direction : SEARCH_ORDER) {
             BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
             if (isBlockingTarget(level, bedrockPos, layout.getPistonPos())
                     || isBlockingTarget(level, bedrockPos, layout.getHeadPos())) {
-                return true;
+                sawBlockedLayout = true;
+                continue;
             }
             if (hasBlockingTorchPlacement(level, bedrockPos, layout)) {
-                return true;
+                sawBlockedLayout = true;
+                continue;
             }
+            return false;
         }
-        return false;
+        return sawBlockedLayout;
     }
 
     public BlockPos getBedrockPos() {
@@ -136,4 +140,5 @@ public final class BedrockMachineLayout {
 
         return false;
     }
+
 }

@@ -22,6 +22,15 @@ import java.util.*;
 
 @SuppressWarnings("UnusedReturnValue")
 public class Action {
+    private static final Direction[] DEFAULT_SIDE_ORDER = {
+            Direction.UP,
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.EAST,
+            Direction.WEST,
+            Direction.DOWN
+    };
+
     protected Map<Direction, Vec3> sides;
     @Nullable
     @Getter
@@ -34,10 +43,7 @@ public class Action {
     protected Boolean shift = null;
 
     public Action() {
-        this.sides = new HashMap<>();
-        for (Direction direction : Direction.values()) {
-            sides.put(direction, new Vec3(0, 0, 0));
-        }
+        this.sides = createDefaultSides();
     }
 
     public Action setLookRotation(int lookRotation) {
@@ -61,18 +67,19 @@ public class Action {
 
     public @NotNull Map<Direction, Vec3> getSides() {
         if (this.sides == null) {
-            this.sides = new HashMap<>();
-            for (Direction d : Direction.values()) {
-                this.sides.put(d, new Vec3(0, 0, 0));
-            }
+            this.sides = createDefaultSides();
         }
         return this.sides;
     }
 
+    protected @NotNull List<Direction> getOrderedSides() {
+        return new ArrayList<>(getSides().keySet());
+    }
+
     public Action setSides(Direction.Axis... axis) {
-        Map<Direction, Vec3> sides = new HashMap<>();
+        Map<Direction, Vec3> sides = new LinkedHashMap<>();
         for (Direction.Axis a : axis) {
-            for (Direction d : Direction.values()) {
+            for (Direction d : DEFAULT_SIDE_ORDER) {
                 if (d.getAxis() == a) {
                     sides.put(d, new Vec3(0, 0, 0));
                 }
@@ -83,18 +90,18 @@ public class Action {
     }
 
     public Action setSides(Map<Direction, Vec3> sides) {
-        this.sides = sides;
+        this.sides = copySidesInDefaultOrder(sides);
         return this;
     }
 
     public Action setSides(Direction side, Vec3 offset) {
-        this.sides = new HashMap<>();
+        this.sides = new LinkedHashMap<>();
         this.sides.put(side, offset);
         return this;
     }
 
     public Action setSides(Direction... directions) {
-        Map<Direction, Vec3> sides = new HashMap<>();
+        Map<Direction, Vec3> sides = new LinkedHashMap<>();
         for (Direction d : directions) {
             sides.put(d, new Vec3(0, 0, 0));
         }
@@ -104,9 +111,9 @@ public class Action {
 
     @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
     public @Nullable Direction getValidSide(ClientLevel world, BlockPos pos) {
-        Map<Direction, Vec3> sides = getSides();
+        List<Direction> orderedSides = getOrderedSides();
         List<Direction> validSides = new ArrayList<>();
-        for (Direction side : sides.keySet()) {
+        for (Direction side : orderedSides) {
             BlockPos neighborPos = pos.relative(side);
             BlockState neighborState = world.getBlockState(neighborPos);
             if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport
@@ -177,5 +184,26 @@ public class Action {
             );
         }
         return this;
+    }
+
+    private static @NotNull Map<Direction, Vec3> createDefaultSides() {
+        Map<Direction, Vec3> sides = new LinkedHashMap<>();
+        for (Direction direction : DEFAULT_SIDE_ORDER) {
+            sides.put(direction, Vec3.ZERO);
+        }
+        return sides;
+    }
+
+    private static @NotNull Map<Direction, Vec3> copySidesInDefaultOrder(@NotNull Map<Direction, Vec3> source) {
+        Map<Direction, Vec3> ordered = new LinkedHashMap<>();
+        for (Direction direction : DEFAULT_SIDE_ORDER) {
+            if (source.containsKey(direction)) {
+                ordered.put(direction, source.get(direction));
+            }
+        }
+        for (Map.Entry<Direction, Vec3> entry : source.entrySet()) {
+            ordered.putIfAbsent(entry.getKey(), entry.getValue());
+        }
+        return ordered;
     }
 }

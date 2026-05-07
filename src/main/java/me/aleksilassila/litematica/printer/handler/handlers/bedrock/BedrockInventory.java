@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
@@ -25,7 +24,6 @@ import java.util.Optional;
 
 public final class BedrockInventory {
     private static final Minecraft CLIENT = Minecraft.getInstance();
-    private static long lastOffhandSwapTick = Long.MIN_VALUE;
 
     private BedrockInventory() {
     }
@@ -67,18 +65,10 @@ public final class BedrockInventory {
         if (player == null || item == null) {
             return false;
         }
-        long now = ClientPlayerTickManager.getCurrentHandlerTime();
         if (player.getOffhandItem().getItem() == item) {
-            return now != lastOffhandSwapTick;
+            return true;
         }
-        if (now == lastOffhandSwapTick) {
-            return false;
-        }
-        if (!switchToOffhand(item)) {
-            return false;
-        }
-        lastOffhandSwapTick = now;
-        return false;
+        return switchToOffhand(item);
     }
 
     public static boolean switchToBestTool(BlockState blockState) {
