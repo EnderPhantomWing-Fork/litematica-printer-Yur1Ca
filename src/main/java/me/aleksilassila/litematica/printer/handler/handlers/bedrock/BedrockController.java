@@ -356,13 +356,11 @@ public final class BedrockController {
             }
             var state = CLIENT.level.getBlockState(pos);
             if (state.isAir()) {
-                CLEANUP_QUEUE.remove(pos);
-                CONSERVATIVE_CLEANUP.remove(pos);
+                discardCleanupPosition(pos);
                 continue;
             }
-            if (!BedrockTargetBlocks.isCleanupResidue(state) && !isReservedByActiveTarget(pos)) {
-                CLEANUP_QUEUE.remove(pos);
-                CONSERVATIVE_CLEANUP.remove(pos);
+            if (!BedrockTargetBlocks.isCleanupResidue(state)) {
+                discardCleanupPosition(pos);
                 continue;
             }
             if (candidate.canReusePendingCleanupPosition(pos, state)) {
@@ -386,7 +384,7 @@ public final class BedrockController {
     }
 
     private static Set<BlockPos> getBlockingCleanupPositions(BedrockTarget candidate) {
-        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
+        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>(candidate.getCleanupPositions());
         positions.add(candidate.getPistonPos());
         positions.add(candidate.getHeadPos());
         if (candidate.getTorchSupportPos() != null) {
@@ -652,20 +650,32 @@ public final class BedrockController {
             return;
         }
 
-        addToCleanup(pos, predictRemoval);
         if (CLIENT.level == null) {
             return;
         }
+        var state = CLIENT.level.getBlockState(pos);
+        if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
+            discardCleanupPosition(pos);
+            return;
+        }
+
+        addToCleanup(pos, predictRemoval);
         if (isReservedByActiveTarget(pos)) {
             BedrockDebugLog.write("cleanup deferred pos=" + BedrockDebugLog.pos(pos) + " reason=reserved_by_active_target");
             return;
         }
-        var state = CLIENT.level.getBlockState(pos);
-        if (BedrockTargetBlocks.isCleanupResidue(state)) {
-            if (BedrockBreaker.breakBlock(pos, predictRemoval)) {
-                CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, getCleanupRetryDelay(state));
-            }
+        if (BedrockBreaker.breakBlock(pos, predictRemoval)) {
+            CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, getCleanupRetryDelay(state));
         }
+    }
+
+    private static void discardCleanupPosition(BlockPos pos) {
+        if (pos == null) {
+            return;
+        }
+        CLEANUP_QUEUE.remove(pos);
+        CONSERVATIVE_CLEANUP.remove(pos);
+        BLOCKED_CLEANUP_POSITIONS.remove(pos);
     }
 
     private static void reorderCleanupQueue() {

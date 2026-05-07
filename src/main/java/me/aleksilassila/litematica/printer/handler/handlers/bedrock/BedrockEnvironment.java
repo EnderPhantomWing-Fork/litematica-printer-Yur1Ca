@@ -307,6 +307,31 @@ public final class BedrockEnvironment {
         return interactions;
     }
 
+    public static BlockPos findFirstOutOfRangePlacementAnchor(ClientLevel level, BlockPos placePos, BlockPos... preferredAnchors) {
+        if (level == null || placePos == null) {
+            return null;
+        }
+
+        Set<BlockPos> seenAnchors = new LinkedHashSet<>();
+        if (preferredAnchors != null) {
+            for (BlockPos preferredAnchor : preferredAnchors) {
+                BlockPos outOfRange = findOutOfRangePlacementAnchor(level, placePos, preferredAnchor, seenAnchors);
+                if (outOfRange != null) {
+                    return outOfRange;
+                }
+            }
+        }
+
+        for (Direction direction : PLACEMENT_DIRECTIONS) {
+            BlockPos outOfRange = findOutOfRangePlacementAnchor(level, placePos, placePos.relative(direction), seenAnchors);
+            if (outOfRange != null) {
+                return outOfRange;
+            }
+        }
+
+        return null;
+    }
+
     public static boolean canInteract(BlockPos pos) {
         if (pos == null || !isWithinBedrockWorkRange(pos)) {
             return false;
@@ -379,6 +404,27 @@ public final class BedrockEnvironment {
             return;
         }
         interactions.add(new PlacementInteraction(anchorPos, clickedFace));
+    }
+
+    private static BlockPos findOutOfRangePlacementAnchor(ClientLevel level, BlockPos placePos, BlockPos anchorPos, Set<BlockPos> seenAnchors) {
+        if (anchorPos == null || !seenAnchors.add(anchorPos)) {
+            return null;
+        }
+        Direction clickedFace = getClickedFace(placePos, anchorPos);
+        if (clickedFace == null || !isWithinBuildHeight(level, anchorPos)) {
+            return null;
+        }
+
+        BlockState anchorState = level.getBlockState(anchorPos);
+        if (anchorState.isAir() || BlockUtils.isReplaceable(anchorState)) {
+            return null;
+        }
+        boolean structurallyUsable = anchorState.isFaceSturdy(level, anchorPos, clickedFace)
+                || BlockUtils.canSupportCenter(level, anchorPos, clickedFace);
+        if (!structurallyUsable) {
+            return null;
+        }
+        return canInteract(anchorPos) ? null : anchorPos;
     }
 
     private static Direction getClickedFace(BlockPos placePos, BlockPos anchorPos) {

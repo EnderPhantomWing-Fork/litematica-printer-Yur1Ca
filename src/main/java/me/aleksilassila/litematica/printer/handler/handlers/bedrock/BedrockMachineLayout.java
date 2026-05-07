@@ -6,11 +6,11 @@ import net.minecraft.core.Direction;
 
 public final class BedrockMachineLayout {
     private static final Direction[] SEARCH_ORDER = {
-            Direction.UP,
             Direction.NORTH,
             Direction.SOUTH,
             Direction.EAST,
             Direction.WEST,
+            Direction.UP,
             Direction.DOWN
     };
 
@@ -30,49 +30,53 @@ public final class BedrockMachineLayout {
         if (level == null || bedrockPos == null) {
             return null;
         }
-        BedrockMachineLayout naturalSupportLayout = findLayout(level, bedrockPos, false);
-        if (naturalSupportLayout != null) {
-            return naturalSupportLayout;
-        }
-        return findLayout(level, bedrockPos, true);
+        return findLayout(level, bedrockPos);
     }
 
-    private static BedrockMachineLayout findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback) {
-        BedrockMachineLayout bestLayout = null;
-        int bestScore = Integer.MAX_VALUE;
+    private static BedrockMachineLayout findLayout(ClientLevel level, BlockPos bedrockPos) {
+        ScoredLayout bestLayout = null;
 
         for (Direction direction : SEARCH_ORDER) {
             BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
             if (!BedrockEnvironment.hasRoomForPiston(level, layout.getPistonPos(), layout.getPistonOffset())) {
                 continue;
             }
-            BedrockTorchPlacement torchPlacement = BedrockEnvironment.findTorchPlacement(level, layout.getPistonPos(), layout.getPistonOffset().getOpposite(), bedrockPos, layout.getPistonPos(), layout.getHeadPos());
-            if (torchPlacement == null && allowSlimeFallback) {
-                torchPlacement = BedrockEnvironment.findPossibleSlimeTorchPlacement(level, layout.getPistonPos(), layout.getPistonOffset().getOpposite(), bedrockPos, layout.getPistonPos(), layout.getHeadPos());
-            }
-            if (torchPlacement == null) {
-                continue;
-            }
-            if (!BedrockEnvironment.arePositionsInteractable(torchPlacement.getSupportPos())) {
-                continue;
-            }
-            BedrockEnvironment.PlacementInteraction placementInteraction = BedrockEnvironment.findPlacementInteraction(
-                    level,
-                    layout.getPistonPos(),
-                    bedrockPos,
-                    torchPlacement.getSupportPos(),
-                    torchPlacement.getTorchPos()
-            );
-            if (placementInteraction == null) {
-                continue;
-            }
-            int score = scoreLayout(level, layout, torchPlacement, placementInteraction);
-            if (score < bestScore) {
-                bestScore = score;
-                bestLayout = layout;
-            }
+            bestLayout = considerPlacement(level, bedrockPos, layout,
+                    BedrockEnvironment.findTorchPlacement(level, layout.getPistonPos(), layout.getPistonOffset().getOpposite(), bedrockPos, layout.getPistonPos(), layout.getHeadPos()),
+                    bestLayout);
+            bestLayout = considerPlacement(level, bedrockPos, layout,
+                    BedrockEnvironment.findPossibleSlimeTorchPlacement(level, layout.getPistonPos(), layout.getPistonOffset().getOpposite(), bedrockPos, layout.getPistonPos(), layout.getHeadPos()),
+                    bestLayout);
         }
-        return bestLayout;
+        return bestLayout == null ? null : bestLayout.layout();
+    }
+
+    private static ScoredLayout considerPlacement(ClientLevel level,
+                                                  BlockPos bedrockPos,
+                                                  BedrockMachineLayout layout,
+                                                  BedrockTorchPlacement torchPlacement,
+                                                  ScoredLayout currentBest) {
+        if (torchPlacement == null) {
+            return currentBest;
+        }
+        if (!BedrockEnvironment.arePositionsInteractable(torchPlacement.getSupportPos())) {
+            return currentBest;
+        }
+        BedrockEnvironment.PlacementInteraction placementInteraction = BedrockEnvironment.findPlacementInteraction(
+                level,
+                layout.getPistonPos(),
+                bedrockPos,
+                torchPlacement.getSupportPos(),
+                torchPlacement.getTorchPos()
+        );
+        if (placementInteraction == null) {
+            return currentBest;
+        }
+        int score = scoreLayout(level, layout, torchPlacement, placementInteraction);
+        if (currentBest == null || score < currentBest.score()) {
+            return new ScoredLayout(layout, score);
+        }
+        return currentBest;
     }
 
     public static boolean shouldDeferUntilExposed(ClientLevel level, BlockPos bedrockPos) {
@@ -179,9 +183,12 @@ public final class BedrockMachineLayout {
             return 0;
         }
         if (offset == Direction.UP) {
-            return 80;
+            return 180;
         }
-        return 160;
+        return 360;
+    }
+
+    private record ScoredLayout(BedrockMachineLayout layout, int score) {
     }
 
 }

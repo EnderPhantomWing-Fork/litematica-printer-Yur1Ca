@@ -176,7 +176,9 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             if (placement != null) {
                 penalty += BedrockController.getSchedulingPenalty(placement.getSupportPos());
                 penalty += BedrockController.getSchedulingPenalty(placement.getTorchPos());
-                if (this.level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)) {
+                boolean slimeFallback = BedrockEnvironment.isSlimePlacementUsable(this.level, placement)
+                        && !BedrockEnvironment.isTorchPlacementUsable(this.level, placement);
+                if (slimeFallback || this.level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)) {
                     penalty += 200;
                 }
             }

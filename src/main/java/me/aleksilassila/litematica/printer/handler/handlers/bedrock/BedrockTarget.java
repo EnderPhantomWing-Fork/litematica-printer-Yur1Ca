@@ -358,6 +358,14 @@ public class BedrockTarget {
             positions.add(getTorchPos());
         }
         positions.addAll(this.tempBlocks);
+        addNearbyCleanupResiduePositions(positions, this.pistonPos);
+        addNearbyCleanupResiduePositions(positions, this.headPos);
+        addNearbyCleanupResiduePositions(positions, this.torchSupportPos);
+        addNearbyCleanupResiduePositions(positions, getTorchPos());
+        addNearbyCleanupResiduePositions(positions, this.slimePos);
+        for (BlockPos tempPos : this.tempBlocks) {
+            addNearbyCleanupResiduePositions(positions, tempPos);
+        }
         return positions;
     }
 
@@ -571,7 +579,13 @@ public class BedrockTarget {
         if (interaction != null) {
             return null;
         }
-        return BedrockEnvironment.findFirstOutOfRangePosition(this.bedrockPos, this.torchSupportPos, this.slimePos, this.headPos);
+        return BedrockEnvironment.findFirstOutOfRangePlacementAnchor(
+                this.level,
+                this.pistonPos,
+                this.torchSupportPos,
+                this.slimePos,
+                this.headPos
+        );
     }
 
     private BlockPos findFirstOutOfRangeTorchPlacementSupport() {
@@ -599,6 +613,23 @@ public class BedrockTarget {
     private void recordTemp(BlockPos pos) {
         if (pos != null) {
             this.tempBlocks.add(pos);
+        }
+    }
+
+    private void addNearbyCleanupResiduePositions(Set<BlockPos> positions, BlockPos centerPos) {
+        if (positions == null || centerPos == null) {
+            return;
+        }
+        for (BlockPos probePos : BedrockEnvironment.getTorchInfluencePositions(centerPos)) {
+            if (hasCleanupResidue(probePos)) {
+                positions.add(probePos);
+            }
+        }
+        for (Direction direction : Direction.values()) {
+            BlockPos probePos = centerPos.relative(direction);
+            if (hasCleanupResidue(probePos)) {
+                positions.add(probePos);
+            }
         }
     }
 
