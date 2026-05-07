@@ -65,8 +65,9 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             return List.of();
         }
 
+        PrinterBox scanBox = snapshotIterationBox(playerInteractionBox);
         List<CandidateInfo> candidates = new ArrayList<>();
-        for (BlockPos pos : playerInteractionBox) {
+        for (BlockPos pos : scanBox) {
             if (pos == null || !BedrockEnvironment.canInteract(pos)) {
                 continue;
             }
@@ -99,6 +100,22 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             filtered.add(candidate.pos());
         }
         return filtered;
+    }
+
+    private PrinterBox snapshotIterationBox(PrinterBox source) {
+        PrinterBox snapshot = new PrinterBox(
+                source.minX,
+                source.minY,
+                source.minZ,
+                source.maxX,
+                source.maxY,
+                source.maxZ
+        );
+        snapshot.iterationMode = source.iterationMode;
+        snapshot.xIncrement = source.xIncrement;
+        snapshot.yIncrement = source.yIncrement;
+        snapshot.zIncrement = source.zIncrement;
+        return snapshot;
     }
 
     @Override

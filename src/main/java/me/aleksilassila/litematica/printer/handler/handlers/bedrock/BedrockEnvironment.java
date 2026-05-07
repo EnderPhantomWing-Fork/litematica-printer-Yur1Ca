@@ -127,6 +127,7 @@ public final class BedrockEnvironment {
 
     private static BedrockTorchPlacement findPreferredTorchPlacement(ClientLevel level, BlockPos centerPos, Direction excludedAxis, boolean allowSlimeSupport, BlockPos... blockedPositions) {
         BedrockTorchPlacement topFallback = null;
+        BedrockTorchPlacement topDirtyFallback = null;
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
             if (excludedAxis != null && direction == excludedAxis) {
                 continue;
@@ -136,7 +137,13 @@ public final class BedrockEnvironment {
                 continue;
             }
             if (isPlacementInteractable(placement, blockedPositions)) {
-                return placement;
+                if (isCleanupFriendlyPlacement(level, placement)) {
+                    return placement;
+                }
+                if (topDirtyFallback == null) {
+                    topDirtyFallback = placement;
+                }
+                continue;
             }
             if (topFallback == null) {
                 topFallback = placement;
@@ -144,6 +151,7 @@ public final class BedrockEnvironment {
         }
 
         BedrockTorchPlacement wallFallback = null;
+        BedrockTorchPlacement wallDirtyFallback = null;
         for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
             if (excludedAxis != null && direction == excludedAxis) {
                 continue;
@@ -158,14 +166,60 @@ public final class BedrockEnvironment {
                     continue;
                 }
                 if (isPlacementInteractable(placement, blockedPositions)) {
-                    return placement;
+                    if (isCleanupFriendlyPlacement(level, placement)) {
+                        return placement;
+                    }
+                    if (wallDirtyFallback == null) {
+                        wallDirtyFallback = placement;
+                    }
+                    continue;
                 }
                 if (wallFallback == null) {
                     wallFallback = placement;
                 }
             }
         }
-        return topFallback != null ? topFallback : wallFallback;
+
+        BedrockTorchPlacement lowerTopFallback = null;
+        BedrockTorchPlacement lowerTopDirtyFallback = null;
+        for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
+            if (excludedAxis != null && direction == excludedAxis) {
+                continue;
+            }
+            BedrockTorchPlacement placement = new BedrockTorchPlacement(centerPos.relative(direction).below(), Direction.UP);
+            if (!isPlacementUsable(level, placement, allowSlimeSupport, blockedPositions)) {
+                continue;
+            }
+            if (isPlacementInteractable(placement, blockedPositions)) {
+                if (isCleanupFriendlyPlacement(level, placement)) {
+                    return placement;
+                }
+                if (lowerTopDirtyFallback == null) {
+                    lowerTopDirtyFallback = placement;
+                }
+                continue;
+            }
+            if (lowerTopFallback == null) {
+                lowerTopFallback = placement;
+            }
+        }
+
+        if (topDirtyFallback != null) {
+            return topDirtyFallback;
+        }
+        if (wallDirtyFallback != null) {
+            return wallDirtyFallback;
+        }
+        if (lowerTopDirtyFallback != null) {
+            return lowerTopDirtyFallback;
+        }
+        if (topFallback != null) {
+            return topFallback;
+        }
+        if (wallFallback != null) {
+            return wallFallback;
+        }
+        return lowerTopFallback;
     }
 
     private static boolean isPlacementUsable(ClientLevel level, BedrockTorchPlacement placement, boolean allowSlimeSupport, BlockPos... blockedPositions) {
@@ -192,6 +246,20 @@ public final class BedrockEnvironment {
             }
         }
         return false;
+    }
+
+    public static boolean isCleanupFriendlyPlacement(ClientLevel level, BedrockTorchPlacement placement) {
+        if (level == null || placement == null || placement.getSupportPos() == null || placement.getTorchPos() == null) {
+            return false;
+        }
+
+        BlockState supportState = level.getBlockState(placement.getSupportPos());
+        if (BedrockTargetBlocks.isCleanupResidue(supportState) && !supportState.is(Blocks.SLIME_BLOCK)) {
+            return false;
+        }
+
+        BlockState torchState = level.getBlockState(placement.getTorchPos());
+        return !BedrockTargetBlocks.isCleanupResidue(torchState) || isRedstoneTorch(torchState);
     }
 
     public static BlockPos findPossibleSlimeSupport(ClientLevel level, BlockPos bedrockPos) {

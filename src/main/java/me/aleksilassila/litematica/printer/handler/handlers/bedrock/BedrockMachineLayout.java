@@ -30,15 +30,18 @@ public final class BedrockMachineLayout {
         if (level == null || bedrockPos == null) {
             return null;
         }
-        BedrockMachineLayout naturalSupportLayout = findLayout(level, bedrockPos, false);
+        LayoutCandidate naturalSupportLayout = findLayout(level, bedrockPos, false);
         if (naturalSupportLayout != null) {
-            return naturalSupportLayout;
+            return naturalSupportLayout.layout();
         }
-        return findLayout(level, bedrockPos, true);
+        LayoutCandidate slimeFallbackLayout = findLayout(level, bedrockPos, true);
+        return slimeFallbackLayout == null ? null : slimeFallbackLayout.layout();
     }
 
-    private static BedrockMachineLayout findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback) {
-        for (Direction direction : SEARCH_ORDER) {
+    private static LayoutCandidate findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback) {
+        LayoutCandidate bestCandidate = null;
+        for (int searchIndex = 0; searchIndex < SEARCH_ORDER.length; searchIndex++) {
+            Direction direction = SEARCH_ORDER[searchIndex];
             BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
             if (!BedrockEnvironment.hasRoomForPiston(level, layout.getPistonPos(), layout.getPistonOffset())) {
                 continue;
@@ -72,9 +75,18 @@ public final class BedrockMachineLayout {
                     torchPlacement.getTorchPos())) {
                 continue;
             }
-            return layout;
+
+            LayoutCandidate candidate = new LayoutCandidate(
+                    layout,
+                    torchPlacement,
+                    layoutScore(level, torchPlacement),
+                    searchIndex
+            );
+            if (bestCandidate == null || candidate.isBetterThan(bestCandidate)) {
+                bestCandidate = candidate;
+            }
         }
-        return null;
+        return bestCandidate;
     }
 
     public static boolean shouldDeferUntilExposed(ClientLevel level, BlockPos bedrockPos) {
@@ -147,6 +159,12 @@ public final class BedrockMachineLayout {
                 return true;
             }
 
+            BlockPos lowerSupportPos = topSupportPos.below();
+            BlockPos lowerTorchPos = lowerSupportPos.above();
+            if (isBlockingTarget(level, bedrockPos, lowerSupportPos) || isBlockingTarget(level, bedrockPos, lowerTorchPos)) {
+                return true;
+            }
+
             BlockPos wallTorchPos = centerPos.relative(direction);
             if (isBlockingTarget(level, bedrockPos, wallTorchPos)) {
                 return true;
@@ -154,5 +172,26 @@ public final class BedrockMachineLayout {
         }
 
         return false;
+    }
+
+    private static int layoutScore(ClientLevel level, BedrockTorchPlacement placement) {
+        return BedrockEnvironment.isCleanupFriendlyPlacement(level, placement) ? 0 : 1;
+    }
+
+    private record LayoutCandidate(
+            BedrockMachineLayout layout,
+            BedrockTorchPlacement placement,
+            int score,
+            int searchIndex
+    ) {
+        private boolean isBetterThan(LayoutCandidate other) {
+            if (other == null) {
+                return true;
+            }
+            if (this.score != other.score) {
+                return this.score < other.score;
+            }
+            return this.searchIndex < other.searchIndex;
+        }
     }
 }

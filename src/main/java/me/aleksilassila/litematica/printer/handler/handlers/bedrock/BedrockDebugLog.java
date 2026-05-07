@@ -88,6 +88,7 @@ public final class BedrockDebugLog {
         if (legacy != null) {
             return Boolean.parseBoolean(legacy);
         }
+        // Debug
         return true;
     }
 
