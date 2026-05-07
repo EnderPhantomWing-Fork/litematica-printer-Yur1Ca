@@ -40,7 +40,6 @@ public final class BedrockBreaker {
             BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_effective_tool");
             return false;
         }
-        BedrockInventory.syncSelectedHotbarSlot();
 
         BedrockDebugLog.write("break start pos=" + BedrockDebugLog.pos(pos)
                 + " state=" + BedrockDebugLog.describeState(state)

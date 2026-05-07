@@ -5,7 +5,6 @@ import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.effect.MobEffectUtil;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -60,17 +59,6 @@ public final class BedrockInventory {
         return InventoryUtils.setItemToOffhand(new ItemStack(item), CLIENT);
     }
 
-    public static boolean prepareOffhandForPlacement(Item item) {
-        LocalPlayer player = CLIENT.player;
-        if (player == null || item == null) {
-            return false;
-        }
-        if (player.getOffhandItem().getItem() == item) {
-            return true;
-        }
-        return switchToOffhand(item);
-    }
-
     public static boolean switchToBestTool(BlockState blockState) {
         LocalPlayer player = CLIENT.player;
         if (player == null || blockState == null || blockState.isAir()) {
@@ -89,18 +77,6 @@ public final class BedrockInventory {
 
         ItemStack bestStack = findBestCleanupBreakingStack(player, blockState);
         return switchToResolvedTool(player, bestStack);
-    }
-
-    public static void syncSelectedHotbarSlot() {
-        LocalPlayer player = CLIENT.player;
-        if (player == null || CLIENT.getConnection() == null) {
-            return;
-        }
-
-        int selectedSlot = InventoryUtils.getSelectedSlot(player.getInventory());
-        if (Inventory.isHotbarSlot(selectedSlot)) {
-            CLIENT.getConnection().send(new ServerboundSetCarriedItemPacket(selectedSlot));
-        }
     }
 
     public static boolean hasAtLeast(Item item, int count) {

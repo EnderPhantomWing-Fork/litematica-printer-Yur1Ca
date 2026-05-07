@@ -2,7 +2,6 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
-import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -28,7 +27,6 @@ public final class BedrockController {
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
-    private static final int NO_MACHINE_LAYOUT_RETRY_COOLDOWN_TICKS = 10;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
@@ -138,6 +136,12 @@ public final class BedrockController {
         if (isTargetOnRetryCooldown(pos)) return false;
         if (countActiveTargets() >= getActiveTargetCap()) return false;
         if (isReservedByActiveTarget(pos)) return false;
+        if (!BedrockEnvironment.canInteract(pos)) {
+            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                    + " reason=out_of_range_bedrock");
+            return false;
+        }
         if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
             setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
@@ -208,20 +212,13 @@ public final class BedrockController {
         if (!canAccept(pos)) {
             return false;
         }
-        if (BedrockMachineLayout.find(level, pos) == null) {
-            setRetryCooldown(pos, NO_MACHINE_LAYOUT_RETRY_COOLDOWN_TICKS);
-            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=no_machine_layout_available");
-            return false;
-        }
-
         BedrockTarget target = new BedrockTarget(pos, level);
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
             return false;
         }
-        BlockPos outOfRangePos = target.findFirstOutOfRangeInteractionPosition();
+        BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
         if (outOfRangePos != null) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
@@ -356,14 +353,16 @@ public final class BedrockController {
             }
             var state = CLIENT.level.getBlockState(pos);
             if (state.isAir()) {
-                discardCleanupPosition(pos);
+                CLEANUP_QUEUE.remove(pos);
+                CONSERVATIVE_CLEANUP.remove(pos);
                 continue;
             }
-            if (!BedrockTargetBlocks.isCleanupResidue(state)) {
-                discardCleanupPosition(pos);
+            if (!BedrockTargetBlocks.isCleanupResidue(state) && !isReservedByActiveTarget(pos)) {
+                CLEANUP_QUEUE.remove(pos);
+                CONSERVATIVE_CLEANUP.remove(pos);
                 continue;
             }
-            if (candidate.canReusePendingCleanupPosition(pos, state)) {
+            if (candidate.canReusePendingCleanupPosition(pos, state) || canReuseBlockingPosition(candidate, pos, state)) {
                 continue;
             }
             if (CLEANUP_QUEUE.contains(pos)) {
@@ -384,7 +383,7 @@ public final class BedrockController {
     }
 
     private static Set<BlockPos> getBlockingCleanupPositions(BedrockTarget candidate) {
-        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>(candidate.getCleanupPositions());
+        LinkedHashSet<BlockPos> positions = new LinkedHashSet<>();
         positions.add(candidate.getPistonPos());
         positions.add(candidate.getHeadPos());
         if (candidate.getTorchSupportPos() != null) {
@@ -416,8 +415,8 @@ public final class BedrockController {
     }
 
     private static boolean hasPowerConflict(BedrockTarget candidate, BedrockTarget existing) {
-        if (intersects(candidate.getPowerReservationPositions(), existing.getPowerReservationPositions())) {
-            return true;
+        if (candidate.sharesTorchPlacementWith(existing)) {
+            return false;
         }
         BlockPos candidateTorchPos = candidate.getTorchPos();
         if (candidateTorchPos != null && existing.isTorchPoweredBy(candidateTorchPos)) {
@@ -430,11 +429,15 @@ public final class BedrockController {
         return false;
     }
 
-    private static boolean intersects(Set<BlockPos> left, Set<BlockPos> right) {
-        for (BlockPos pos : left) {
-            if (right.contains(pos)) {
-                return true;
+    private static boolean canReuseBlockingPosition(BedrockTarget candidate, BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (pos == null || state == null || state.isAir()) {
+            return false;
+        }
+        for (BedrockTarget target : TARGETS) {
+            if (!target.sharesTorchPlacementWith(candidate)) {
+                continue;
             }
+            return candidate.canReusePowerReservation(pos, state);
         }
         return false;
     }
@@ -450,29 +453,25 @@ public final class BedrockController {
             if (processedTargets.contains(target)) {
                 continue;
             }
-            BlockPos outOfRangePos = target.findFirstOutOfRangeInteractionPosition();
+            BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
             if (outOfRangePos != null) {
                 BedrockTarget.Status status = target.refreshStatusOnly();
-                int outOfRangeTicks = target.noteOutOfRange();
                 BedrockDebugLog.write("controller out_of_range bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
                         + " status=" + status
-                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos)
-                        + " outOfRangeTicks=" + outOfRangeTicks
-                        + " graceTicks=" + target.getOutOfRangeGraceTicks());
-                if (shouldRetireOutOfRange(target, status)) {
+                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
+                if (shouldRetireOutOfRange(status)) {
                     cleanupTarget(iterator, target, "out_of_range");
                 }
                 processedTargets.add(target);
                 continue;
             }
-            target.clearOutOfRange();
 
             boolean fastLane = isFastLaneStatus(target.getStatus());
             if (priorityOnly != fastLane) {
                 continue;
             }
 
-            boolean activeStatus = consumesExecuteBudget(target.getStatus());
+            boolean activeStatus = countsTowardsActiveCap(target.getStatus());
             BedrockTarget.Status status;
             boolean hadBudget = activeStatus && executeBudget > 0;
             if (hadBudget) {
@@ -569,23 +568,21 @@ public final class BedrockController {
                 || status == BedrockTarget.Status.EXTENDED;
     }
 
-    private static boolean consumesExecuteBudget(BedrockTarget.Status status) {
-        return status == BedrockTarget.Status.UNINITIALIZED
-                || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
-                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE
-                || status == BedrockTarget.Status.EXTENDED;
-    }
-
     private static boolean isFastLaneStatus(BedrockTarget.Status status) {
         return status == BedrockTarget.Status.EXTENDED
                 || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
     }
 
-    private static boolean shouldRetireOutOfRange(BedrockTarget target, BedrockTarget.Status status) {
-        return status == BedrockTarget.Status.RETRACTED
+    private static boolean shouldRetireOutOfRange(BedrockTarget.Status status) {
+        return status == BedrockTarget.Status.UNINITIALIZED
+                || status == BedrockTarget.Status.RETRACTED
                 || status == BedrockTarget.Status.FAILED
                 || status == BedrockTarget.Status.STUCK
-                || target.hasExceededOutOfRangeGrace();
+                || status == BedrockTarget.Status.EXTENDED
+                || status == BedrockTarget.Status.RETRACTING
+                || status == BedrockTarget.Status.NEEDS_WAITING
+                || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
+                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
     }
 
     private static boolean isStartupSerialPhase() {
@@ -650,32 +647,20 @@ public final class BedrockController {
             return;
         }
 
+        addToCleanup(pos, predictRemoval);
         if (CLIENT.level == null) {
             return;
         }
-        var state = CLIENT.level.getBlockState(pos);
-        if (state.isAir() || !BedrockTargetBlocks.isCleanupResidue(state)) {
-            discardCleanupPosition(pos);
-            return;
-        }
-
-        addToCleanup(pos, predictRemoval);
         if (isReservedByActiveTarget(pos)) {
             BedrockDebugLog.write("cleanup deferred pos=" + BedrockDebugLog.pos(pos) + " reason=reserved_by_active_target");
             return;
         }
-        if (BedrockBreaker.breakBlock(pos, predictRemoval)) {
-            CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, getCleanupRetryDelay(state));
+        var state = CLIENT.level.getBlockState(pos);
+        if (BedrockTargetBlocks.isCleanupResidue(state)) {
+            if (BedrockBreaker.breakBlock(pos, predictRemoval)) {
+                CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, getCleanupRetryDelay(state));
+            }
         }
-    }
-
-    private static void discardCleanupPosition(BlockPos pos) {
-        if (pos == null) {
-            return;
-        }
-        CLEANUP_QUEUE.remove(pos);
-        CONSERVATIVE_CLEANUP.remove(pos);
-        BLOCKED_CLEANUP_POSITIONS.remove(pos);
     }
 
     private static void reorderCleanupQueue() {
@@ -800,6 +785,9 @@ public final class BedrockController {
             if (target == self) {
                 continue;
             }
+            if (target.matchesTorchPlacement(placement)) {
+                continue;
+            }
             if (target.getReservedPositions().contains(placement.getSupportPos())
                     || target.getReservedPositions().contains(placement.getTorchPos())) {
                 return true;
@@ -870,12 +858,7 @@ public final class BedrockController {
         return Math.max(SUBMIT_RETRY_COOLDOWN_TICKS, getCleanupRetryDelay(blockingState) + 2);
     }
 
-    private record CandidateFootprint(
-            BlockPos pistonPos,
-            BlockPos torchPos,
-            Set<BlockPos> structuralPositions,
-            Set<BlockPos> powerReservationPositions
-    ) {
+    private record CandidateFootprint(Set<BlockPos> structuralPositions, Set<BlockPos> powerReservationPositions) {
         private static CandidateFootprint of(BlockPos bedrockPos, BedrockMachineLayout layout, BedrockTorchPlacement placement) {
             LinkedHashSet<BlockPos> structuralPositions = new LinkedHashSet<>();
             LinkedHashSet<BlockPos> powerReservationPositions = new LinkedHashSet<>();
@@ -892,12 +875,7 @@ public final class BedrockController {
                 }
             }
 
-            return new CandidateFootprint(
-                    layout.getPistonPos(),
-                    placement == null ? null : placement.getTorchPos(),
-                    structuralPositions,
-                    powerReservationPositions
-            );
+            return new CandidateFootprint(structuralPositions, powerReservationPositions);
         }
 
         private boolean isEmpty() {
@@ -913,17 +891,11 @@ public final class BedrockController {
                 }
             }
             for (BlockPos pos : this.powerReservationPositions) {
-                if (targetStructural.contains(pos) || targetPower.contains(pos)) {
+                if (targetStructural.contains(pos)) {
                     return true;
                 }
             }
-            if (this.torchPos != null && target.isTorchPoweredBy(this.torchPos)) {
-                return true;
-            }
-            BlockPos targetTorchPos = target.getTorchPos();
-            return this.pistonPos != null
-                    && targetTorchPos != null
-                    && BedrockEnvironment.getTorchInfluencePositions(this.pistonPos).contains(targetTorchPos);
+            return false;
         }
     }
 

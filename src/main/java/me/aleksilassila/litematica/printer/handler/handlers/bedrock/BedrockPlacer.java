@@ -30,8 +30,8 @@ public final class BedrockPlacer {
             BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=no_player_or_gamemode");
             return false;
         }
-        if (!BedrockInventory.prepareOffhandForPlacement(item)) {
-            BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=" + getPlacementItemWaitReason(item));
+        if (!BedrockInventory.switchToOffhand(item)) {
+            BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=missing_item");
             return false;
         }
         PlayerLook look = new PlayerLook(clickedFace.getOpposite());
@@ -49,31 +49,18 @@ public final class BedrockPlacer {
         return true;
     }
 
-    public static boolean preparePiston(BlockPos pistonPos, Direction facing) {
-        if (!BedrockInventory.prepareOffhandForPlacement(Blocks.PISTON.asItem())) {
-            BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos)
-                    + " facing=" + facing
-                    + " reason=" + getPlacementItemWaitReason(Blocks.PISTON.asItem()));
-            return false;
-        }
-        return true;
+    public static boolean placePiston(BlockPos pistonPos, Direction facing) {
+        return placePiston(pistonPos, facing, pistonPos.relative(facing.getOpposite()));
     }
 
     public static boolean placePiston(BlockPos pistonPos, Direction facing, BlockPos... preferredAnchors) {
         LocalPlayer player = CLIENT.player;
-        if (player == null || CLIENT.gameMode == null || CLIENT.level == null) {
+        if (player == null || CLIENT.gameMode == null) {
             BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=no_player_or_gamemode");
             return false;
         }
-        if (!preparePiston(pistonPos, facing)) {
-            return false;
-        }
-
-        BedrockEnvironment.PlacementInteraction placementInteraction = BedrockEnvironment.findPlacementInteraction(CLIENT.level, pistonPos, preferredAnchors);
-        if (placementInteraction == null) {
-            BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos)
-                    + " facing=" + facing
-                    + " reason=no_interactable_support");
+        if (!BedrockInventory.switchToOffhand(Blocks.PISTON.asItem())) {
+            BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=missing_piston");
             return false;
         }
 
@@ -84,26 +71,30 @@ public final class BedrockPlacer {
         NetworkUtils.sendLookPacket(player, look);
         syncLocalLook(player, look.getYaw(), look.getPitch());
 
-        BlockHitResult hitResult = new BlockHitResult(
-                Vec3.atCenterOf(placementInteraction.anchorPos()),
-                placementInteraction.clickedFace(),
-                placementInteraction.anchorPos(),
-                false
-        );
+        BlockPos clickedPos = pistonPos.relative(facing.getOpposite());
+        Direction clickedFace = facing;
+        if (CLIENT.level != null && CLIENT.getSingleplayerServer() != null) {
+            BlockPos[] anchors = preferredAnchors != null && preferredAnchors.length > 0
+                    ? preferredAnchors
+                    : new BlockPos[]{clickedPos};
+            BedrockEnvironment.PlacementInteraction placementInteraction =
+                    BedrockEnvironment.findPlacementInteraction(CLIENT.level, pistonPos, anchors);
+            if (placementInteraction != null) {
+                clickedPos = placementInteraction.anchorPos();
+                clickedFace = placementInteraction.clickedFace();
+            }
+        }
+
+        BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(clickedPos), clickedFace, clickedPos, false);
 
         placeBlockAggressively(player, hitResult);
         restoreLook(player);
         BedrockDebugLog.write("placePiston piston=" + BedrockDebugLog.pos(pistonPos)
                 + " facing=" + facing
-                + " clickedBlock=" + BedrockDebugLog.pos(placementInteraction.anchorPos())
-                + " clickedFace=" + placementInteraction.clickedFace()
+                + " clickedBlock=" + BedrockDebugLog.pos(clickedPos)
                 + " sentYaw=" + look.getYaw()
                 + " sentPitch=" + look.getPitch());
         return true;
-    }
-
-    private static String getPlacementItemWaitReason(Item item) {
-        return BedrockInventory.hasAtLeast(item, 1) ? "offhand_sync" : "missing_item";
     }
 
     private static void placeBlockAggressively(LocalPlayer player, BlockHitResult hitResult) {
