@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.world.level.block.Blocks;
 
 public final class BedrockBreaker {
     private static final Minecraft CLIENT = Minecraft.getInstance();
@@ -56,7 +57,7 @@ public final class BedrockBreaker {
                     + " predictRemoval=" + predictRemoval);
         }
 
-        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval()) {
+        if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval(state, direction)) {
             gameModeExtension.litematica_printer$continueDestroyBlock(false, pos, direction);
         }
 
@@ -86,11 +87,11 @@ public final class BedrockBreaker {
         //$$ ));
         //#endif
 
-        boolean allowPrediction = predictRemoval && shouldPredictRemoval();
+        boolean allowPrediction = predictRemoval && shouldPredictRemoval(state, direction);
         if (predictRemoval && !allowPrediction) {
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
-                        + " reason=server_connection");
+                        + " reason=" + getPredictionSuppressionReason(state, direction));
             }
         }
         if (allowPrediction) {
@@ -100,7 +101,30 @@ public final class BedrockBreaker {
         return true;
     }
 
-    private static boolean shouldPredictRemoval() {
-        return CLIENT.getConnection() == null || CLIENT.getSingleplayerServer() != null;
+    private static boolean shouldPredictRemoval(net.minecraft.world.level.block.state.BlockState state, Direction direction) {
+        if (CLIENT.getConnection() != null && CLIENT.getSingleplayerServer() == null) {
+            return false;
+        }
+
+        return !isSingleplayerHorizontalMachineState(state, direction);
+    }
+
+    private static String getPredictionSuppressionReason(net.minecraft.world.level.block.state.BlockState state, Direction direction) {
+        if (CLIENT.getConnection() != null && CLIENT.getSingleplayerServer() == null) {
+            return "server_connection";
+        }
+        if (isSingleplayerHorizontalMachineState(state, direction)) {
+            return "singleplayer_horizontal_machine_state";
+        }
+        return "prediction_policy";
+    }
+
+    private static boolean isSingleplayerHorizontalMachineState(net.minecraft.world.level.block.state.BlockState state, Direction direction) {
+        return CLIENT.getSingleplayerServer() != null
+                && direction != null
+                && direction.getAxis().isHorizontal()
+                && (state.is(Blocks.PISTON)
+                || state.is(Blocks.MOVING_PISTON)
+                || state.is(Blocks.PISTON_HEAD));
     }
 }
