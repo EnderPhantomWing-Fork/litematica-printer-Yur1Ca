@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Set;
 
 public final class BedrockEnvironment {
-    private static final double SINGLEPLAYER_INTERACTION_GRACE = 2.0D;
+    private static final double BEDROCK_INTERACTION_GRACE = 1.0D;
     private static final Direction[] PLACEMENT_DIRECTIONS = {
             Direction.DOWN,
             Direction.NORTH,
@@ -363,11 +363,7 @@ public final class BedrockEnvironment {
             return false;
         }
 
-        if (ConfigUtils.client.getSingleplayerServer() == null) {
-            return PlayerUtils.isWithinBlockInteractionRange(player, pos, 1.0D);
-        }
-
-        return PlayerUtils.isWithinBlockInteractionRange(player, pos, SINGLEPLAYER_INTERACTION_GRACE);
+        return PlayerUtils.isWithinBlockInteractionRange(player, pos, BEDROCK_INTERACTION_GRACE);
     }
 
     public static BlockPos findFirstOutOfRangePosition(BlockPos... positions) {

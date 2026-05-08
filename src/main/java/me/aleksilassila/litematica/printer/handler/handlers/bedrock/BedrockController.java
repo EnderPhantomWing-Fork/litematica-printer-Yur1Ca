@@ -122,38 +122,31 @@ public final class BedrockController {
     }
 
     public static boolean canScanForTargets() {
-        if (isStrictStartupSerialMode() && !TARGETS.isEmpty()) {
-            return false;
-        }
-        if (isAcceptBackpressured()) {
-            return false;
-        }
-        return acceptedThisTick < getSubmitCap() && countActiveTargets() < getActiveTargetCap();
+        return probeCanScanForTargets().accepted();
     }
 
     public static boolean canAccept(BlockPos pos) {
-        if (!canScanForTargets()) return false;
-        if (isTargetOnRetryCooldown(pos)) return false;
-        if (countActiveTargets() >= getActiveTargetCap()) return false;
-        if (isReservedByActiveTarget(pos)) return false;
-        if (!BedrockEnvironment.canInteract(pos)) {
+        AcceptProbe probe = probeCanAccept(pos);
+        if (probe.accepted()) {
+            return true;
+        }
+        if ("out_of_range_bedrock".equals(probe.reason())) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
                     + " reason=out_of_range_bedrock");
             return false;
         }
-        if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
+        if ("await_target_exposure".equals(probe.reason())) {
             setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
             BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
                     + " reason=await_target_exposure");
             return false;
         }
+        return false;
+    }
 
-        for (BedrockTarget target : TARGETS) {
-            if (target.getBedrockPos().equals(pos)) return false;
-            if (target.getPistonPos().equals(pos)) return false;
-        }
-        return true;
+    public static String debugCanAcceptReason(BlockPos pos) {
+        return probeCanAccept(pos).reason();
     }
 
     public static boolean isPositionOnRetryCooldown(BlockPos pos) {
@@ -938,6 +931,64 @@ public final class BedrockController {
     private static void setRetryCooldown(BlockPos pos, int ticks) {
         if (CLIENT.level != null && pos != null && ticks > 0) {
             CooldownUtils.INSTANCE.setCooldown(CLIENT.level, RETRY_COOLDOWN_KEY, pos, ticks);
+        }
+    }
+
+    private static AcceptProbe probeCanScanForTargets() {
+        if (isStrictStartupSerialMode() && !TARGETS.isEmpty()) {
+            return AcceptProbe.reject("startup_serial");
+        }
+        if (isAcceptBackpressured()) {
+            return AcceptProbe.reject("accept_backpressure");
+        }
+        if (acceptedThisTick >= getSubmitCap()) {
+            return AcceptProbe.reject("submit_cap");
+        }
+        if (countActiveTargets() >= getActiveTargetCap()) {
+            return AcceptProbe.reject("active_cap");
+        }
+        return AcceptProbe.accept();
+    }
+
+    private static AcceptProbe probeCanAccept(BlockPos pos) {
+        AcceptProbe scanProbe = probeCanScanForTargets();
+        if (!scanProbe.accepted()) {
+            return scanProbe;
+        }
+        if (isTargetOnRetryCooldown(pos)) {
+            return AcceptProbe.reject("retry_cooldown");
+        }
+        if (countActiveTargets() >= getActiveTargetCap()) {
+            return AcceptProbe.reject("active_cap");
+        }
+        if (isReservedByActiveTarget(pos)) {
+            return AcceptProbe.reject("reserved_by_active_target");
+        }
+        if (!BedrockEnvironment.canInteract(pos)) {
+            return AcceptProbe.reject("out_of_range_bedrock");
+        }
+        if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
+            return AcceptProbe.reject("await_target_exposure");
+        }
+
+        for (BedrockTarget target : TARGETS) {
+            if (target.getBedrockPos().equals(pos)) {
+                return AcceptProbe.reject("duplicate_active_target");
+            }
+            if (target.getPistonPos().equals(pos)) {
+                return AcceptProbe.reject("occupied_by_active_piston");
+            }
+        }
+        return AcceptProbe.accept();
+    }
+
+    private record AcceptProbe(boolean accepted, String reason) {
+        private static AcceptProbe accept() {
+            return new AcceptProbe(true, "accepted");
+        }
+
+        private static AcceptProbe reject(String reason) {
+            return new AcceptProbe(false, reason);
         }
     }
 }

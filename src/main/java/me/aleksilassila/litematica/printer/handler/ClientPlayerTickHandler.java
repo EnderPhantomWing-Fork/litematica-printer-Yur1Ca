@@ -198,7 +198,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                         if (!LitematicaUtils.isSchematicBlock(pos)) {
                             continue;
                         }
-                    } else if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+                    } else if (requiresSelection1ModeRangeCheck() && !LitematicaUtils.isWithinSelection1ModeRange(pos)) {
                         continue;
                     }
                     if (selectionType != null && !ConfigUtils.isPositionInSelectionRange(player, pos, selectionType)) {
@@ -234,6 +234,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
     protected boolean isSchematicBlockHandler() {
         return false;
+    }
+
+    protected boolean requiresSelection1ModeRangeCheck() {
+        return true;
     }
 
 

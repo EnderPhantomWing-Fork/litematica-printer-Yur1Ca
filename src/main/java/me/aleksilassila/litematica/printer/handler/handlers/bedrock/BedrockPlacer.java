@@ -73,7 +73,7 @@ public final class BedrockPlacer {
 
         BlockPos clickedPos = pistonPos.relative(facing.getOpposite());
         Direction clickedFace = facing;
-        if (CLIENT.level != null && CLIENT.getSingleplayerServer() != null) {
+        if (CLIENT.level != null) {
             BlockPos[] anchors = preferredAnchors != null && preferredAnchors.length > 0
                     ? preferredAnchors
                     : new BlockPos[]{clickedPos};

@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
+import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockDebugLog;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEnvironment;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockMachineLayout;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory;
@@ -11,6 +12,7 @@ import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTorch
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTargetBlocks;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
+import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -71,6 +73,9 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             if (pos == null || !BedrockEnvironment.canInteract(pos)) {
                 continue;
             }
+            if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+                continue;
+            }
             if (!BedrockTargetBlocks.isTargetBlock(this.level.getBlockState(pos))) {
                 continue;
             }
@@ -79,6 +84,8 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             }
             candidates.add(buildCandidate(pos.immutable()));
         }
+
+        logIsolatedCandidateSummary(candidates);
 
         if (candidates.size() <= 1) {
             List<BlockPos> single = new ArrayList<>(candidates.size());
@@ -90,11 +97,11 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
         candidates.sort(Comparator
                 .comparingInt(CandidateInfo::priority)
-                .thenComparingInt(CandidateInfo::neighborTargetCount)
-                .thenComparingDouble(CandidateInfo::distanceSqToPlayer));
+                .thenComparingInt(CandidateInfo::neighborTargetCount));
 
         int limit = Math.min(candidates.size(), CANDIDATE_SOFT_CAP);
         List<CandidateInfo> selectedCandidates = selectNonConflictingCandidates(candidates, limit);
+        logIsolatedCandidateSelection(candidates, selectedCandidates, limit);
         List<BlockPos> filtered = new ArrayList<>(selectedCandidates.size());
         for (CandidateInfo candidate : selectedCandidates) {
             filtered.add(candidate.pos());
@@ -132,6 +139,11 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     }
 
     @Override
+    protected boolean requiresSelection1ModeRangeCheck() {
+        return false;
+    }
+
+    @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(blockPos))) {
             setIterationConsumedEffectiveExecution(false);
@@ -154,14 +166,13 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     private CandidateInfo buildCandidate(BlockPos pos) {
         if (this.level == null) {
-            return new CandidateInfo(pos, null, null, List.of(), List.of(), Integer.MAX_VALUE, Integer.MAX_VALUE, Double.MAX_VALUE);
+            return new CandidateInfo(pos, null, null, List.of(), List.of(), Integer.MAX_VALUE, Integer.MAX_VALUE);
         }
 
         BedrockMachineLayout layout = BedrockMachineLayout.find(this.level, pos);
         BedrockTorchPlacement placement = layout == null ? null : findPlacement(layout, pos);
         int priority = candidatePriority(pos, layout, placement);
         int neighborTargetCount = neighborTargetCount(pos);
-        double distanceSqToPlayer = distanceSqToPlayer(pos);
         return new CandidateInfo(
                 pos,
                 layout,
@@ -169,8 +180,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 buildStructuralPositions(pos, layout),
                 buildPowerReservationPositions(placement),
                 priority,
-                neighborTargetCount,
-                distanceSqToPlayer
+                neighborTargetCount
         );
     }
 
@@ -214,6 +224,72 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             selected.add(candidate);
         }
         return selected;
+    }
+
+    private void logIsolatedCandidateSummary(List<CandidateInfo> candidates) {
+        CandidateInfo isolated = findBestIsolatedCandidate(candidates);
+        if (isolated == null) {
+            return;
+        }
+        String acceptReason = BedrockController.debugCanAcceptReason(isolated.pos());
+        BedrockDebugLog.write("isolated scan pos=" + BedrockDebugLog.pos(isolated.pos())
+                + " priority=" + isolated.priority()
+                + " neighbors=" + isolated.neighborTargetCount()
+                + " layout=" + (isolated.layout() != null ? isolated.layout().getPistonOffset() : "null")
+                + " piston=" + BedrockDebugLog.pos(isolated.layout() != null ? isolated.layout().getPistonPos() : null)
+                + " torchSupport=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getSupportPos() : null)
+                + " torch=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getTorchPos() : null)
+                + " canAccept=" + acceptReason
+                + " candidates=" + candidates.size());
+    }
+
+    private void logIsolatedCandidateSelection(List<CandidateInfo> candidates, List<CandidateInfo> selectedCandidates, int limit) {
+        CandidateInfo isolated = findBestIsolatedCandidate(candidates);
+        if (isolated == null) {
+            return;
+        }
+        int sortedIndex = candidates.indexOf(isolated);
+        int selectedIndex = selectedCandidates.indexOf(isolated);
+        String selectionReason = selectedIndex >= 0
+                ? "selected"
+                : findIsolationSelectionReason(isolated, selectedCandidates, limit);
+        BedrockDebugLog.write("isolated selection pos=" + BedrockDebugLog.pos(isolated.pos())
+                + " sortedIndex=" + sortedIndex
+                + " selectedIndex=" + selectedIndex
+                + " limit=" + limit
+                + " selectedCount=" + selectedCandidates.size()
+                + " reason=" + selectionReason);
+    }
+
+    private CandidateInfo findBestIsolatedCandidate(List<CandidateInfo> candidates) {
+        CandidateInfo best = null;
+        for (CandidateInfo candidate : candidates) {
+            if (candidate.neighborTargetCount() != 0) {
+                continue;
+            }
+            if (best == null
+                    || candidate.priority() < best.priority()
+                    || (candidate.priority() == best.priority()
+                    && candidate.pos().asLong() < best.pos().asLong())) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private String findIsolationSelectionReason(CandidateInfo isolated, List<CandidateInfo> selectedCandidates, int limit) {
+        if (limit <= 0) {
+            return "limit_zero";
+        }
+        if (selectedCandidates.size() >= limit) {
+            return "limit_reached";
+        }
+        for (CandidateInfo existing : selectedCandidates) {
+            if (candidatesConflict(isolated, existing)) {
+                return "conflict_with=" + BedrockDebugLog.pos(existing.pos());
+            }
+        }
+        return "not_selected_unknown";
     }
 
     private boolean conflictsWithSelected(CandidateInfo candidate, List<CandidateInfo> selected) {
@@ -316,17 +392,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         return count;
     }
 
-    private double distanceSqToPlayer(BlockPos pos) {
-        if (this.player == null) {
-            return Double.MAX_VALUE;
-        }
-        return this.player.position().distanceToSqr(
-                pos.getX() + 0.5,
-                pos.getY() + 0.5,
-                pos.getZ() + 0.5
-        );
-    }
-
     private boolean sameTorchPlacement(BedrockTorchPlacement left, BedrockTorchPlacement right) {
         return left.getClickedFace() == right.getClickedFace()
                 && left.getSupportPos() != null
@@ -349,8 +414,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             List<BlockPos> structuralPositions,
             List<BlockPos> powerReservationPositions,
             int priority,
-            int neighborTargetCount,
-            double distanceSqToPlayer
+            int neighborTargetCount
     ) {
     }
 
