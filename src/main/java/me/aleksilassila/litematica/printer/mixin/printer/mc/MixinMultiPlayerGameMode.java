@@ -61,6 +61,8 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Unique
     private boolean hasDelayedDestroy;
     @Unique
+    private boolean delayedDestroyLocalPrediction;
+    @Unique
     private long delayedDestroyStartTick;
     @Unique
     private final Map<BlockPos, Long> litematica_printer$pendingDelayedDestroys = new LinkedHashMap<>();
@@ -173,6 +175,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             if (blockState.isAir()) {
                 this.litematica_printer$removePendingDelayedDestroy(this.delayedDestroyPos);
                 this.hasDelayedDestroy = false;
+                this.delayedDestroyLocalPrediction = false;
                 this.litematica_printer$clearDestroyProgress(player, this.delayedDestroyPos);
                 return;
             }
@@ -180,9 +183,12 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             int elapsedTicks = (int) (currentTick - this.delayedDestroyStartTick);
             float delayedDestroyProgress = blockState.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsedTicks;
             if (delayedDestroyProgress >= 1.0F) {
-                this.destroyBlock(this.delayedDestroyPos);
+                if (this.delayedDestroyLocalPrediction) {
+                    this.destroyBlock(this.delayedDestroyPos);
+                }
                 this.litematica_printer$removePendingDelayedDestroy(this.delayedDestroyPos);
                 this.hasDelayedDestroy = false;
+                this.delayedDestroyLocalPrediction = false;
                 this.litematica_printer$clearDestroyProgress(player, this.delayedDestroyPos);
             }
         } else {
@@ -251,9 +257,12 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             int elapsedTicks = (int) (currentTick - this.delayedDestroyStartTick);
             float delayedDestroyProgress = blockState2.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsedTicks;
             if (delayedDestroyProgress >= 1.0F) {
-                this.destroyBlock(this.delayedDestroyPos);
+                if (this.delayedDestroyLocalPrediction) {
+                    this.destroyBlock(this.delayedDestroyPos);
+                }
                 this.litematica_printer$removePendingDelayedDestroy(this.delayedDestroyPos);
                 this.hasDelayedDestroy = false;
+                this.delayedDestroyLocalPrediction = false;
                 MineDebugLog.write("mine break delayed_completed pos=" + MineDebugLog.pos(this.delayedDestroyPos)
                         + " elapsedTicks=" + elapsedTicks);
             }
@@ -283,6 +292,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         if (blockState.isAir()) {
             if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
                 this.hasDelayedDestroy = false;
+                this.delayedDestroyLocalPrediction = false;
                 this.litematica_printer$clearDestroyProgress(player, blockPos);
             }
             this.litematica_printer$removePendingDelayedDestroy(blockPos);
@@ -395,6 +405,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                     NetworkUtils.sendPacket(sequence -> {
                         this.hasDelayedDestroy = true;
                         this.delayedDestroyPos = blockPos;
+                        this.delayedDestroyLocalPrediction = localPrediction;
                         this.delayedDestroyStartTick = getClientTickCount();
                         this.litematica_printer$addPendingDelayedDestroy(blockPos);
                         this.litematica_printer$resetDestroyState(player, blockPos);
