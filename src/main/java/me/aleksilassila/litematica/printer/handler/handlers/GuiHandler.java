@@ -7,6 +7,7 @@ import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTargetBlocks;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.minecraft.core.BlockPos;
@@ -27,8 +28,10 @@ public class GuiHandler extends ClientPlayerTickHandler {
     private final Progress fillProgress = new Progress(Configs.Core.FILL);
     @Getter
     private final Progress mineProgress = new Progress(Configs.Core.MINE);
+    @Getter
+    private final Progress bedrockProgress = new Progress(Configs.Hotkeys.BEDROCK);
 
-    private final Progress[] progresses = new Progress[]{totalProgress, printProgress, fluidProgress, fillProgress, mineProgress};
+    private final Progress[] progresses = new Progress[]{totalProgress, printProgress, fluidProgress, fillProgress, mineProgress, bedrockProgress};
 
     public GuiHandler() {
         super(NAME, null, Configs.Core.RENDER_HUD, null, true);
@@ -77,6 +80,14 @@ public class GuiHandler extends ClientPlayerTickHandler {
                 totalProgress.finished++;
             }
             mineProgress.total++;
+            totalProgress.total++;
+        }
+        if (isBedrockMode()) {
+            if (!BedrockTargetBlocks.isTargetBlock(level.getBlockState(blockPos))) {
+                bedrockProgress.finished++;
+                totalProgress.finished++;
+            }
+            bedrockProgress.total++;
             totalProgress.total++;
         }
         for (Progress progress : progresses) {
