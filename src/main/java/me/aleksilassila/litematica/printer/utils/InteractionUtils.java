@@ -186,7 +186,7 @@ public class InteractionUtils {
 
     public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
         this.forceDelayedDestroy = true;
-        return this.continueDestroyBlock(blockPos, direction, false, false);
+        return this.continueDestroyBlock(blockPos, direction, !Configs.Break.BREAK_USE_PACKET.getBooleanValue(), false);
     }
 
     public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos) {

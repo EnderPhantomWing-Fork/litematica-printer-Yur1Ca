@@ -12,6 +12,7 @@ import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
+import me.aleksilassila.litematica.printer.utils.mods.TweakerooUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -74,7 +75,8 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     public boolean canIterationBlockPos(BlockPos pos) {
-        if (isBlockPosOnCooldown(pos) || CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
+        if ((this.usesInternalMineCooldown() && isBlockPosOnCooldown(pos))
+                || CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
             return false;
         }
         if (InteractionUtils.INSTANCE.isPendingDelayedDestroy(pos)) {
@@ -139,15 +141,23 @@ public class MineHandler extends ClientPlayerTickHandler {
             this.currentBreakPos = null;
         }
         if (result == BlockBreakResult.COMPLETED) {
-            this.setBlockPosCooldown(blockPos, getBreakCooldown());
+            if (this.usesInternalMineCooldown()) {
+                this.setBlockPosCooldown(blockPos, getBreakCooldown());
+            }
             MineDebugLog.write("mine completed pos=" + MineDebugLog.pos(blockPos)
-                    + " cooldown=" + getBreakCooldown());
+                    + " cooldown=" + (this.usesInternalMineCooldown() ? getBreakCooldown() : 0));
         } else if (result == BlockBreakResult.COMPLETED_WAIT) {
-            this.setBlockPosCooldown(blockPos, 2);
+            if (this.usesInternalMineCooldown()) {
+                this.setBlockPosCooldown(blockPos, 2);
+            }
             MineDebugLog.write("mine completed_wait pos=" + MineDebugLog.pos(blockPos)
-                    + " cooldown=2");
+                    + " cooldown=" + (this.usesInternalMineCooldown() ? 2 : 0));
         } else if (result == BlockBreakResult.FAILED) {
             MineDebugLog.write("mine failed pos=" + MineDebugLog.pos(blockPos));
         }
+    }
+
+    private boolean usesInternalMineCooldown() {
+        return !(ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isDisableBlockBreakCooldownEnabled());
     }
 }

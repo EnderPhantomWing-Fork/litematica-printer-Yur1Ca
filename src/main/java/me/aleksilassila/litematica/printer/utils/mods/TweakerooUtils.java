@@ -8,6 +8,7 @@ import java.lang.reflect.Method;
 
 public class TweakerooUtils {
     private static @Nullable Object tweakToolSwitchEnum;
+    private static @Nullable Object disableBlockBreakCooldownConfig;
     private static @Nullable Method trySwitchToEffectiveToolMethod;
     private static @Nullable Method getBooleanValueMethod;
 
@@ -17,6 +18,9 @@ public class TweakerooUtils {
                 Class<?> featureToggleClass = Class.forName("fi.dy.masa.tweakeroo.config.FeatureToggle");
                 tweakToolSwitchEnum = featureToggleClass.getField("TWEAK_TOOL_SWITCH").get(null);
 
+                Class<?> disableConfigsClass = Class.forName("fi.dy.masa.tweakeroo.config.Configs$Disable");
+                disableBlockBreakCooldownConfig = disableConfigsClass.getField("DISABLE_BLOCK_BREAK_COOLDOWN").get(null);
+
                 Class<?> iConfigBooleanClass = Class.forName("fi.dy.masa.malilib.config.IConfigBoolean");
                 getBooleanValueMethod = iConfigBooleanClass.getDeclaredMethod("getBooleanValue");
 
@@ -25,6 +29,7 @@ public class TweakerooUtils {
 
             } catch (Exception e) {
                 tweakToolSwitchEnum = null;
+                disableBlockBreakCooldownConfig = null;
                 trySwitchToEffectiveToolMethod = null;
                 getBooleanValueMethod = null;
                 e.printStackTrace();
@@ -42,6 +47,18 @@ public class TweakerooUtils {
         }
         try {
             return (boolean) getBooleanValueMethod.invoke(tweakToolSwitchEnum);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public static boolean isDisableBlockBreakCooldownEnabled() {
+        if (getBooleanValueMethod == null || disableBlockBreakCooldownConfig == null) {
+            return false;
+        }
+        try {
+            return (boolean) getBooleanValueMethod.invoke(disableBlockBreakCooldownConfig);
         } catch (Exception e) {
             e.printStackTrace();
             return false;
