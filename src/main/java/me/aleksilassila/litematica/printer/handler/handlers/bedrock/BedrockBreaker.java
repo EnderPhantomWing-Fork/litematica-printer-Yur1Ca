@@ -90,7 +90,7 @@ public final class BedrockBreaker {
         if (predictRemoval && !allowPrediction) {
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
-                        + " reason=server_connection");
+                        + " reason=server_rules");
             }
         }
         if (allowPrediction) {
@@ -101,6 +101,6 @@ public final class BedrockBreaker {
     }
 
     private static boolean shouldPredictRemoval() {
-        return CLIENT.getConnection() == null || CLIENT.getSingleplayerServer() != null;
+        return false;
     }
 }
