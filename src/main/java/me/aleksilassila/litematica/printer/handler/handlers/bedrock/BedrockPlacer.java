@@ -116,10 +116,13 @@ public final class BedrockPlacer {
             ActionManager.INSTANCE.setShift(player, true);
         }
         try {
-            InteractionUtils.INSTANCE.useItemOn(false, InteractionHand.OFF_HAND, hitResult);
-            ItemStack offhand = player.getOffhandItem();
-            if (!offhand.isEmpty()) {
-                offhand.useOn(new UseOnContext(player, InteractionHand.OFF_HAND, hitResult));
+            boolean singleplayer = CLIENT.getSingleplayerServer() != null;
+            InteractionUtils.INSTANCE.useItemOn(singleplayer, InteractionHand.OFF_HAND, hitResult);
+            if (!singleplayer) {
+                ItemStack offhand = player.getOffhandItem();
+                if (!offhand.isEmpty()) {
+                    offhand.useOn(new UseOnContext(player, InteractionHand.OFF_HAND, hitResult));
+                }
             }
         } finally {
             if (useShift && !wasSneak) {
