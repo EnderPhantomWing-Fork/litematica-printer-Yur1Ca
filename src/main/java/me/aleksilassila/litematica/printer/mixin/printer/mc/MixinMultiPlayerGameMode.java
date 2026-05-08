@@ -39,6 +39,11 @@ import java.util.Map;
 @SuppressWarnings({"DataFlowIssue", "DuplicateCondition"})
 @Mixin(value = MultiPlayerGameMode.class, priority = 1020)
 public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExtension {
+    @Unique
+    private static final float MINE_FAST_FINISH_PROGRESS = 0.5F;
+    @Unique
+    private static final float MINE_FAST_FINISH_COMPLETED_PROGRESS = 0.6F;
+
     // @formatter:off
     @Shadow
     private BlockPos destroyBlockPos;
@@ -341,7 +346,11 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 }
             }
             float destroyProgress = blockState.getDestroyProgress(player, level, blockPos);
-            if (destroyProgress >= ConfigUtils.getBreakProgressThreshold()) {
+            boolean mineFastFinish = forceDelayedDestroy && destroyProgress > MINE_FAST_FINISH_PROGRESS;
+            if (destroyProgress >= ConfigUtils.getBreakProgressThreshold() || mineFastFinish) {
+                boolean waitForServerState = mineFastFinish
+                        && destroyProgress < ConfigUtils.getBreakProgressThreshold()
+                        && destroyProgress <= MINE_FAST_FINISH_COMPLETED_PROGRESS;
                 NetworkUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
                 NetworkUtils.sendPacket(sequence -> {
                     if (localPrediction) {
@@ -352,9 +361,10 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                     return getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence);
                 });
                 MineDebugLog.write("mine break completed pos=" + MineDebugLog.pos(blockPos)
-                        + " path=instant_threshold progress=" + destroyProgress
+                        + " path=" + (mineFastFinish ? "mine_fast_finish" : "instant_threshold")
+                        + " progress=" + destroyProgress
                         + " threshold=" + ConfigUtils.getBreakProgressThreshold());
-                return BlockBreakResult.COMPLETED;
+                return waitForServerState ? BlockBreakResult.COMPLETED_WAIT : BlockBreakResult.COMPLETED;
             }
             NetworkUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
             if (destroyProgress >= 1.0F) {
