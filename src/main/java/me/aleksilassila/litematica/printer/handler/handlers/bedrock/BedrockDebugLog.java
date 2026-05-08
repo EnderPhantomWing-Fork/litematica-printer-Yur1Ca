@@ -49,6 +49,10 @@ public final class BedrockDebugLog {
         return LOG_PATH;
     }
 
+    public static boolean isEnabled() {
+        return ENABLED;
+    }
+
     public static String pos(BlockPos pos) {
         if (pos == null) {
             return "null";
@@ -89,7 +93,7 @@ public final class BedrockDebugLog {
             return Boolean.parseBoolean(legacy);
         }
         // Debug
-        return true;
+        return false;
     }
 
     private static String resolveMode() {

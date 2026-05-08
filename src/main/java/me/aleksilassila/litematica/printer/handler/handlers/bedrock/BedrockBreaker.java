@@ -23,12 +23,16 @@ public final class BedrockBreaker {
 
     public static boolean breakBlock(BlockPos pos, Direction direction, boolean predictRemoval) {
         if (CLIENT.level == null || CLIENT.player == null) {
-            BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=no_level_or_player");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=no_level_or_player");
+            }
             return false;
         }
         var state = CLIENT.level.getBlockState(pos);
         if (state.isAir()) {
-            BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=air");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=air");
+            }
             return false;
         }
 
@@ -37,16 +41,20 @@ public final class BedrockBreaker {
                 ? BedrockInventory.switchToCleanupTool(state)
                 : BedrockInventory.switchToBestTool(state);
         if (!switched) {
-            BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_effective_tool");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_effective_tool");
+            }
             return false;
         }
 
-        BedrockDebugLog.write("break start pos=" + BedrockDebugLog.pos(pos)
-                + " state=" + BedrockDebugLog.describeState(state)
-                + " face=" + direction
-                + " cleanupResidue=" + cleanupResidue
-                + " tool=" + CLIENT.player.getMainHandItem().getItem()
-                + " predictRemoval=" + predictRemoval);
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("break start pos=" + BedrockDebugLog.pos(pos)
+                    + " state=" + BedrockDebugLog.describeState(state)
+                    + " face=" + direction
+                    + " cleanupResidue=" + cleanupResidue
+                    + " tool=" + CLIENT.player.getMainHandItem().getItem()
+                    + " predictRemoval=" + predictRemoval);
+        }
 
         if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval()) {
             gameModeExtension.litematica_printer$continueDestroyBlock(false, pos, direction);
@@ -80,8 +88,10 @@ public final class BedrockBreaker {
 
         boolean allowPrediction = predictRemoval && shouldPredictRemoval();
         if (predictRemoval && !allowPrediction) {
-            BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
-                    + " reason=server_connection");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
+                        + " reason=server_connection");
+            }
         }
         if (allowPrediction) {
             CLIENT.level.removeBlock(pos, false);

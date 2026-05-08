@@ -232,15 +232,17 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             return;
         }
         String acceptReason = BedrockController.debugCanAcceptReason(isolated.pos());
-        BedrockDebugLog.write("isolated scan pos=" + BedrockDebugLog.pos(isolated.pos())
-                + " priority=" + isolated.priority()
-                + " neighbors=" + isolated.neighborTargetCount()
-                + " layout=" + (isolated.layout() != null ? isolated.layout().getPistonOffset() : "null")
-                + " piston=" + BedrockDebugLog.pos(isolated.layout() != null ? isolated.layout().getPistonPos() : null)
-                + " torchSupport=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getSupportPos() : null)
-                + " torch=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getTorchPos() : null)
-                + " canAccept=" + acceptReason
-                + " candidates=" + candidates.size());
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("isolated scan pos=" + BedrockDebugLog.pos(isolated.pos())
+                    + " priority=" + isolated.priority()
+                    + " neighbors=" + isolated.neighborTargetCount()
+                    + " layout=" + (isolated.layout() != null ? isolated.layout().getPistonOffset() : "null")
+                    + " piston=" + BedrockDebugLog.pos(isolated.layout() != null ? isolated.layout().getPistonPos() : null)
+                    + " torchSupport=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getSupportPos() : null)
+                    + " torch=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getTorchPos() : null)
+                    + " canAccept=" + acceptReason
+                    + " candidates=" + candidates.size());
+        }
     }
 
     private void logIsolatedCandidateSelection(List<CandidateInfo> candidates, List<CandidateInfo> selectedCandidates, int limit) {
@@ -253,12 +255,14 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         String selectionReason = selectedIndex >= 0
                 ? "selected"
                 : findIsolationSelectionReason(isolated, selectedCandidates, limit);
-        BedrockDebugLog.write("isolated selection pos=" + BedrockDebugLog.pos(isolated.pos())
-                + " sortedIndex=" + sortedIndex
-                + " selectedIndex=" + selectedIndex
-                + " limit=" + limit
-                + " selectedCount=" + selectedCandidates.size()
-                + " reason=" + selectionReason);
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("isolated selection pos=" + BedrockDebugLog.pos(isolated.pos())
+                    + " sortedIndex=" + sortedIndex
+                    + " selectedIndex=" + selectedIndex
+                    + " limit=" + limit
+                    + " selectedCount=" + selectedCandidates.size()
+                    + " reason=" + selectionReason);
+        }
     }
 
     private CandidateInfo findBestIsolatedCandidate(List<CandidateInfo> candidates) {

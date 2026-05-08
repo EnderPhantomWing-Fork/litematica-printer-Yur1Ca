@@ -52,7 +52,7 @@ public final class BedrockController {
     }
 
     public static void reset() {
-        if (!TARGETS.isEmpty() || !CLEANUP_QUEUE.isEmpty()) {
+        if (BedrockDebugLog.isEnabled() && (!TARGETS.isEmpty() || !CLEANUP_QUEUE.isEmpty())) {
             BedrockDebugLog.write("controller reset targets=" + TARGETS.size() + " cleanup=" + CLEANUP_QUEUE.size());
         }
         TARGETS.clear();
@@ -99,7 +99,7 @@ public final class BedrockController {
         logControllerConfigIfChanged();
         int executeBudget = getExecuteBudget();
         int initialExecuteBudget = executeBudget;
-        if (!TARGETS.isEmpty()) {
+        if (BedrockDebugLog.isEnabled() && !TARGETS.isEmpty()) {
             BedrockDebugLog.write("controller tick targets=" + TARGETS.size()
                     + " active=" + countActiveTargets()
                     + " cleanup=" + CLEANUP_QUEUE.size()
@@ -132,14 +132,18 @@ public final class BedrockController {
         }
         if ("out_of_range_bedrock".equals(probe.reason())) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
-            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=out_of_range_bedrock");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                        + " reason=out_of_range_bedrock");
+            }
             return false;
         }
         if ("await_target_exposure".equals(probe.reason())) {
             setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
-            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=await_target_exposure");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                        + " reason=await_target_exposure");
+            }
             return false;
         }
         return false;
@@ -208,15 +212,19 @@ public final class BedrockController {
         BedrockTarget target = new BedrockTarget(pos, level);
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
-            BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
+            }
             return false;
         }
         BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
         if (outOfRangePos != null) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
-            BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=out_of_range_machine"
-                    + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                        + " reason=out_of_range_machine"
+                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
+            }
             return false;
         }
 
@@ -226,10 +234,12 @@ public final class BedrockController {
             expeditePendingCleanup(pendingCleanupPos, blockingState);
             setRetryCooldown(pos, getPendingCleanupRetryTicks(blockingState));
             noteSubmitRejected("pending_cleanup", pos, pendingCleanupPos);
-            BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=pending_cleanup"
-                    + " blockingPos=" + BedrockDebugLog.pos(pendingCleanupPos)
-                    + " blockingState=" + BedrockDebugLog.describeState(blockingState));
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
+                        + " reason=pending_cleanup"
+                        + " blockingPos=" + BedrockDebugLog.pos(pendingCleanupPos)
+                        + " blockingState=" + BedrockDebugLog.describeState(blockingState));
+            }
             return false;
         }
 
@@ -237,24 +247,28 @@ public final class BedrockController {
         if (conflict != null) {
             setRetryCooldown(pos, MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS);
             noteSubmitRejected("machine_overlap", pos, conflict.getBedrockPos());
-            BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
-                    + " reason=machine_overlap"
-                    + " conflictBedrock=" + BedrockDebugLog.pos(conflict.getBedrockPos())
-                    + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
-                    + " torch=" + BedrockDebugLog.pos(target.getTorchPos())
-                    + " piston=" + BedrockDebugLog.pos(target.getPistonPos()));
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
+                        + " reason=machine_overlap"
+                        + " conflictBedrock=" + BedrockDebugLog.pos(conflict.getBedrockPos())
+                        + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
+                        + " torch=" + BedrockDebugLog.pos(target.getTorchPos())
+                        + " piston=" + BedrockDebugLog.pos(target.getPistonPos()));
+            }
             return false;
         }
 
         if (target.getStatus() != BedrockTarget.Status.FAILED) {
             TARGETS.add(target);
             acceptedThisTick++;
-            BedrockDebugLog.write("submit accepted bedrock=" + BedrockDebugLog.pos(pos)
-                    + " piston=" + BedrockDebugLog.pos(target.getPistonPos())
-                    + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
-                    + " torch=" + BedrockDebugLog.pos(target.getTorchPos())
-                    + " slime=" + BedrockDebugLog.pos(target.getSlimePos())
-                    + " conservativeSync=" + target.usesConservativeSync());
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit accepted bedrock=" + BedrockDebugLog.pos(pos)
+                        + " piston=" + BedrockDebugLog.pos(target.getPistonPos())
+                        + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
+                        + " torch=" + BedrockDebugLog.pos(target.getTorchPos())
+                        + " slime=" + BedrockDebugLog.pos(target.getSlimePos())
+                        + " conservativeSync=" + target.usesConservativeSync());
+            }
             return true;
         }
         return false;
@@ -309,10 +323,12 @@ public final class BedrockController {
                 boolean predictRemoval = !CONSERVATIVE_CLEANUP.contains(pos);
                 if (BedrockBreaker.breakBlock(pos, predictRemoval)) {
                     CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, retryDelay);
-                    BedrockDebugLog.write("cleanup retry pos=" + BedrockDebugLog.pos(pos)
-                            + " state=" + BedrockDebugLog.describeState(state)
-                            + " predictRemoval=" + predictRemoval
-                            + " retryDelay=" + retryDelay);
+                    if (BedrockDebugLog.isEnabled()) {
+                        BedrockDebugLog.write("cleanup retry pos=" + BedrockDebugLog.pos(pos)
+                                + " state=" + BedrockDebugLog.describeState(state)
+                                + " predictRemoval=" + predictRemoval
+                                + " retryDelay=" + retryDelay);
+                    }
                     count++;
                 }
             }
@@ -449,9 +465,11 @@ public final class BedrockController {
             BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
             if (outOfRangePos != null) {
                 BedrockTarget.Status status = target.refreshStatusOnly();
-                BedrockDebugLog.write("controller out_of_range bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                        + " status=" + status
-                        + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
+                if (BedrockDebugLog.isEnabled()) {
+                    BedrockDebugLog.write("controller out_of_range bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                            + " status=" + status
+                            + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
+                }
                 if (shouldRetireOutOfRange(status)) {
                     cleanupTarget(iterator, target, "out_of_range");
                 }
@@ -480,19 +498,25 @@ public final class BedrockController {
                 executeBudget--;
             }
             if (target.initializedThisTick()) {
-                BedrockDebugLog.write("controller init consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                        + " remainingBudget=" + executeBudget
-                        + " status=" + status);
+                if (BedrockDebugLog.isEnabled()) {
+                    BedrockDebugLog.write("controller init consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                            + " remainingBudget=" + executeBudget
+                            + " status=" + status);
+                }
             }
             if (target.executedThisTick()) {
-                BedrockDebugLog.write("controller execute consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                        + " remainingBudget=" + executeBudget
-                        + " status=" + status);
+                if (BedrockDebugLog.isEnabled()) {
+                    BedrockDebugLog.write("controller execute consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                            + " remainingBudget=" + executeBudget
+                            + " status=" + status);
+                }
             } else if (hadBudget && target.consumedThroughputThisTick()) {
-                BedrockDebugLog.write("controller action consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                        + " remainingBudget=" + executeBudget
-                        + " status=" + status
-                        + " action=" + target.getThroughputActionThisTick());
+                if (BedrockDebugLog.isEnabled()) {
+                    BedrockDebugLog.write("controller action consumed bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                            + " remainingBudget=" + executeBudget
+                            + " status=" + status
+                            + " action=" + target.getThroughputActionThisTick());
+                }
             }
 
             boolean retireOnSuccessfulRetracting = status == BedrockTarget.Status.RETRACTING
@@ -516,10 +540,12 @@ public final class BedrockController {
         if (shouldCountConfirmedSuccess(target, reason)) {
             confirmedSuccessesSinceReset++;
         }
-        BedrockDebugLog.write("controller cleanup start bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
-                + " status=" + target.getStatus()
-                + " cleanupCount=" + target.getCleanupPositions().size()
-                + (reason == null ? "" : " reason=" + reason));
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("controller cleanup start bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                    + " status=" + target.getStatus()
+                    + " cleanupCount=" + target.getCleanupPositions().size()
+                    + (reason == null ? "" : " reason=" + reason));
+        }
         iterator.remove();
         for (BlockPos tempPos : target.getCleanupPositions()) {
             cleanupBlockOrQueue(tempPos, false);
@@ -599,12 +625,14 @@ public final class BedrockController {
         lastLoggedBedrockThroughput = bedrockThroughput;
         lastLoggedBreakThroughput = breakThroughput;
         lastLoggedBedrockInterval = bedrockInterval;
-        BedrockDebugLog.write("controller config"
-                + " bedrockBlocksPerTick=" + bedrockThroughput
-                + " breakBlocksPerTick=" + breakThroughput
-                + " bedrockInterval=" + bedrockInterval
-                + " activeCap=" + getActiveTargetCap()
-                + " submitCap=" + getSubmitCap());
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("controller config"
+                    + " bedrockBlocksPerTick=" + bedrockThroughput
+                    + " breakBlocksPerTick=" + breakThroughput
+                    + " bedrockInterval=" + bedrockInterval
+                    + " activeCap=" + getActiveTargetCap()
+                    + " submitCap=" + getSubmitCap());
+        }
     }
 
     private static int getConfiguredThroughput() {
@@ -645,7 +673,9 @@ public final class BedrockController {
             return;
         }
         if (isReservedByActiveTarget(pos)) {
-            BedrockDebugLog.write("cleanup deferred pos=" + BedrockDebugLog.pos(pos) + " reason=reserved_by_active_target");
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("cleanup deferred pos=" + BedrockDebugLog.pos(pos) + " reason=reserved_by_active_target");
+            }
             return;
         }
         var state = CLIENT.level.getBlockState(pos);
@@ -719,9 +749,11 @@ public final class BedrockController {
         int retryDelay = getCleanupRetryDelay(state);
         if (BedrockBreaker.breakBlock(pos, false)) {
             CooldownUtils.INSTANCE.setCooldown(CLIENT.level, CLEANUP_RETRY_COOLDOWN_KEY, pos, retryDelay);
-            BedrockDebugLog.write("cleanup expedite pos=" + BedrockDebugLog.pos(pos)
-                    + " state=" + BedrockDebugLog.describeState(state)
-                    + " retryDelay=" + retryDelay);
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("cleanup expedite pos=" + BedrockDebugLog.pos(pos)
+                        + " state=" + BedrockDebugLog.describeState(state)
+                        + " retryDelay=" + retryDelay);
+            }
         }
     }
 
@@ -795,7 +827,9 @@ public final class BedrockController {
             return;
         }
         nextExecuteTick = ClientPlayerTickManager.getCurrentHandlerTime() + interval;
-        BedrockDebugLog.write("controller schedule interval=" + interval + " nextExecuteTick=" + nextExecuteTick);
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("controller schedule interval=" + interval + " nextExecuteTick=" + nextExecuteTick);
+        }
     }
 
     private static boolean isTargetOnRetryCooldown(BlockPos pos) {
@@ -823,12 +857,14 @@ public final class BedrockController {
             return;
         }
         nextAcceptTick = candidateNextAcceptTick;
-        BedrockDebugLog.write("controller accept backpressure reason=" + reason
-                + " bedrock=" + BedrockDebugLog.pos(pos)
-                + " blocker=" + BedrockDebugLog.pos(blocker)
-                + " cleanupPressure=" + cleanupPressureThisTick
-                + " rejectedThisTick=" + rejectedThisTick
-                + " nextAcceptTick=" + nextAcceptTick);
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("controller accept backpressure reason=" + reason
+                    + " bedrock=" + BedrockDebugLog.pos(pos)
+                    + " blocker=" + BedrockDebugLog.pos(blocker)
+                    + " cleanupPressure=" + cleanupPressureThisTick
+                    + " rejectedThisTick=" + rejectedThisTick
+                    + " nextAcceptTick=" + nextAcceptTick);
+        }
     }
 
     private static int getSubmitRejectWeight(String reason) {
