@@ -40,11 +40,11 @@ public final class BedrockPlacer {
         }
         PlayerLook look = new PlayerLook(clickedFace.getOpposite());
         rememberLook(player);
-        NetworkUtils.sendLookPacket(player, look);
+        sendLookPacketBypassingActionManager(player, look);
         syncLocalLook(player, look.getYaw(), look.getPitch());
         // Use center of the support block for more reliable interaction
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(supportPos), clickedFace, supportPos, false);
-        placeBlockAggressively(player, hitResult);
+        placeBlockAggressively(player, hitResult, true);
         restoreLook(player);
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("placeSimple support=" + BedrockDebugLog.pos(supportPos)
@@ -77,9 +77,10 @@ public final class BedrockPlacer {
         // Pistons face opposite to the direction the player is looking when placed.
         // We want the resulting piston facing to match `facing`, so look at the opposite side.
         PlayerLook look = new PlayerLook(facing.getOpposite());
-        rememberLook(player);
-        NetworkUtils.sendLookPacket(player, look);
-        syncLocalLook(player, look.getYaw(), look.getPitch());
+        // Packet-mode piston placement only needs the server-side look. Touching the
+        // local player rotation here can produce an immediate vanilla look update,
+        // which races horizontal piston placement in some singleplayer environments.
+        sendLookPacketBypassingActionManager(player, look);
 
         BlockPos clickedPos = pistonPos.relative(facing.getOpposite());
         Direction clickedFace = facing;
@@ -97,11 +98,11 @@ public final class BedrockPlacer {
 
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(clickedPos), clickedFace, clickedPos, false);
 
-        placeBlockAggressively(player, hitResult);
-        restoreLook(player);
+        placeBlockAggressively(player, hitResult, false);
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("placePiston piston=" + BedrockDebugLog.pos(pistonPos)
                     + " facing=" + facing
+                    + " clickedFace=" + clickedFace
                     + " clickedBlock=" + BedrockDebugLog.pos(clickedPos)
                     + " sentYaw=" + look.getYaw()
                     + " sentPitch=" + look.getPitch());
@@ -109,7 +110,7 @@ public final class BedrockPlacer {
         return true;
     }
 
-    private static void placeBlockAggressively(LocalPlayer player, BlockHitResult hitResult) {
+    private static void placeBlockAggressively(LocalPlayer player, BlockHitResult hitResult, boolean allowLocalUseFallback) {
         boolean useShift = CLIENT.level != null && BedrockTargetBlocks.requiresSneakPlacement(CLIENT.level.getBlockState(hitResult.getBlockPos()));
         boolean wasSneak = player.isShiftKeyDown();
         if (useShift && !wasSneak) {
@@ -117,14 +118,26 @@ public final class BedrockPlacer {
         }
         try {
             InteractionUtils.INSTANCE.useItemOn(false, InteractionHand.OFF_HAND, hitResult);
-            ItemStack offhand = player.getOffhandItem();
-            if (!offhand.isEmpty()) {
-                offhand.useOn(new UseOnContext(player, InteractionHand.OFF_HAND, hitResult));
+            if (allowLocalUseFallback) {
+                ItemStack offhand = player.getOffhandItem();
+                if (!offhand.isEmpty()) {
+                    offhand.useOn(new UseOnContext(player, InteractionHand.OFF_HAND, hitResult));
+                }
             }
         } finally {
             if (useShift && !wasSneak) {
                 ActionManager.INSTANCE.setShift(player, false);
             }
+        }
+    }
+
+    private static void sendLookPacketBypassingActionManager(LocalPlayer player, PlayerLook look) {
+        PlayerLook queuedLook = ActionManager.INSTANCE.look;
+        try {
+            ActionManager.INSTANCE.look = null;
+            NetworkUtils.sendLookPacket(player, look);
+        } finally {
+            ActionManager.INSTANCE.look = queuedLook;
         }
     }
 
@@ -141,6 +154,8 @@ public final class BedrockPlacer {
 
     private static void restoreLook(LocalPlayer player) {
         syncLocalLook(player, lastYaw, lastPitch);
-        NetworkUtils.sendLookPacket(player, lastYaw, lastPitch);
+        // Keep the server on the placement look until its use-item packet has been
+        // processed; restoring the server-side look immediately can race horizontal
+        // piston placement and make the piston pick the player's real camera yaw.
     }
 }
