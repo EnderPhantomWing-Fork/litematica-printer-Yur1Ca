@@ -1,9 +1,11 @@
 package me.aleksilassila.litematica.printer.utils;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import me.aleksilassila.litematica.printer.Debug;
 import me.aleksilassila.litematica.printer.I18n;
+import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.StringUtils;
 import net.fabricmc.loader.api.FabricLoader;
@@ -26,15 +28,25 @@ import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
 
 public class UpdateCheckerUtils {
+    private static final String DEFAULT_REPOSITORY_URL = "https://github.com/Yur1Ca/litematica-printer";
+    private static final String DOWNLOAD_URL = "https://openlist.hanauta.icu/Minecraft/Litematica-Printer";
+    public static final String REPOSITORY_URL = resolveRepositoryUrl();
+    private static final String RELEASES_API_URL = resolveReleasesApiUrl(REPOSITORY_URL);
+
     // 本地版本（从fabric.mod.json读取）
     public static final String LOCAL_VERSION = getVersionFromModJson();
 
-    // 语义化版本号正则：匹配v1.2.3、1.2、5等格式，提取数字部分
-    public static final Pattern SEM_VER_PATTERN = Pattern.compile("^v?(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?.*$");
+    // 语义化版本号正则：匹配 v1.2.3.4、1.2、5 等格式，提取前四段数字部分
+    public static final Pattern SEM_VER_PATTERN = Pattern.compile("^v?(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:\\.(\\d+))?.*$");
 
     public static void checkForUpdates() {
+        if (isSnapshotVersion(LOCAL_VERSION)) {
+            Debug.alwaysWrite("Skip update check for development version: " + LOCAL_VERSION);
+            return;
+        }
+
         CompletableFuture.runAsync(() -> {
-            // 获取GitHub最新正式版版本号（已过滤预发布版）
+            // 获取 GitHub 最新正式版版本号（过滤 draft / prerelease / dev 标签）
             String latestOfficialVersion = getLatestOfficialPrinterVersion();
             if (latestOfficialVersion == null) {
                 return;
@@ -54,14 +66,23 @@ public class UpdateCheckerUtils {
                             .withStyle(ChatFormatting.YELLOW));
                     MessageUtils.addMessage(I18n.UPDATE_RECOMMENDATION.getName()
                             .withStyle(ChatFormatting.RED));
-                    MessageUtils.addMessage(I18n.UPDATE_REPOSITORY.getName()
-                            .withStyle(ChatFormatting.WHITE));
-                    MessageUtils.addMessage(StringUtils.literal("https://github.com/bunnyi116/litematica-printer3")
+                    MessageUtils.addMessage(I18n.UPDATE_DOWNLOAD.getName()
                             .setStyle(Style.EMPTY
                                     //#if MC >= 12105
-                                    .withClickEvent(new ClickEvent.OpenUrl(URI.create("https://github.com/bunnyi116/litematica-printer3")))
+                                    .withClickEvent(new ClickEvent.OpenUrl(URI.create(DOWNLOAD_URL)))
                                     //#else
-                                    //$$ .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://github.com/bunnyi116/litematica-printer3"))
+                                    //$$ .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, DOWNLOAD_URL))
+                                    //#endif
+                                    .withUnderlined(true)
+                                    .withColor(ChatFormatting.GREEN)));
+                    MessageUtils.addMessage(I18n.UPDATE_REPOSITORY.getName()
+                            .withStyle(ChatFormatting.WHITE));
+                    MessageUtils.addMessage(StringUtils.literal(REPOSITORY_URL)
+                            .setStyle(Style.EMPTY
+                                    //#if MC >= 12105
+                                    .withClickEvent(new ClickEvent.OpenUrl(URI.create(REPOSITORY_URL)))
+                                    //#else
+                                    //$$ .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, REPOSITORY_URL))
                                     //#endif
                                     .withUnderlined(true)
                                     .withColor(ChatFormatting.BLUE)));
@@ -79,7 +100,7 @@ public class UpdateCheckerUtils {
      */
     public static String getLatestOfficialPrinterVersion() {
         try {
-            URI uri = URI.create("https://api.github.com/repos/bunnyi116/litematica-printer3/releases/latest");
+            URI uri = URI.create(RELEASES_API_URL);
             HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
             conn.setConnectTimeout(20000);
             conn.setReadTimeout(20000);
@@ -91,8 +112,20 @@ public class UpdateCheckerUtils {
                 scanner.useDelimiter("\\A");
                 if (scanner.hasNext()) {
                     String response = scanner.next();
-                    JsonObject release = JsonParser.parseString(response).getAsJsonObject();
-                    return release.get("tag_name").getAsString();
+                    JsonArray releases = JsonParser.parseString(response).getAsJsonArray();
+                    for (int i = 0; i < releases.size(); i++) {
+                        JsonObject release = releases.get(i).getAsJsonObject();
+                        if (release.get("draft").getAsBoolean() || release.get("prerelease").getAsBoolean()) {
+                            continue;
+                        }
+
+                        String tagName = release.get("tag_name").getAsString();
+                        if (isSnapshotVersion(tagName)) {
+                            continue;
+                        }
+
+                        return tagName;
+                    }
                 }
             }
         } catch (Exception exception) {
@@ -103,13 +136,48 @@ public class UpdateCheckerUtils {
         return null;
     }
 
+    private static String resolveRepositoryUrl() {
+        try {
+            ModContainer container = getModContainer();
+            Optional<String> sourcesUrl = container.getMetadata().getContact().get("sources");
+            if (sourcesUrl.isPresent() && !sourcesUrl.get().isBlank()) {
+                return normalizeRepositoryUrl(sourcesUrl.get());
+            }
+        } catch (Exception exception) {
+            Debug.alwaysWrite("Failed to resolve repository URL from metadata: " + exception.getMessage());
+        }
+        return DEFAULT_REPOSITORY_URL;
+    }
+
+    private static String resolveReleasesApiUrl(String repositoryUrl) {
+        try {
+            URI uri = URI.create(repositoryUrl);
+            if (!"github.com".equalsIgnoreCase(uri.getHost())) {
+                return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+            }
+
+            String path = uri.getPath();
+            if (path == null || path.isBlank()) {
+                return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+            }
+
+            String[] parts = path.replaceFirst("^/", "").split("/");
+            if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
+                return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+            }
+
+            return "https://api.github.com/repos/" + parts[0] + "/" + parts[1].replaceAll("\\.git$", "") + "/releases";
+        } catch (Exception exception) {
+            Debug.alwaysWrite("Failed to resolve releases API URL from repository URL: " + exception.getMessage());
+            return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+        }
+    }
+
     /**
      * 从fabric.mod.json读取本地Mod版本号（保留原逻辑）
      */
     private static String getVersionFromModJson() {
-        ModContainer container = FabricLoader.getInstance()
-                .getModContainer("litematica-printer")
-                .orElseThrow(() -> new IllegalStateException("未找到对应 mod: litematica-printer"));
+        ModContainer container = getModContainer();
         Optional<Path> modPathOptional = container.findPath("fabric.mod.json");
         if (modPathOptional.isEmpty()) {
             System.out.println("Cannot find fabric.mod.json file");
@@ -127,6 +195,20 @@ public class UpdateCheckerUtils {
         }
     }
 
+    private static ModContainer getModContainer() {
+        return FabricLoader.getInstance()
+                .getModContainer(Reference.MOD_ID)
+                .orElseThrow(() -> new IllegalStateException("未找到对应 mod: " + Reference.MOD_ID));
+    }
+
+    private static String normalizeRepositoryUrl(String repositoryUrl) {
+        String normalized = repositoryUrl.strip();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.replaceAll("\\.git$", "");
+    }
+
     /**
      * 判断是否为快照版本（dev/beta/alpha/snapshot）
      */
@@ -135,22 +217,25 @@ public class UpdateCheckerUtils {
         if (version == null || "unknown".equals(version)) {
             return true;
         }
-        String lowerVersion = version.toLowerCase();
-        return lowerVersion.contains("dev") || lowerVersion.contains("beta")
-                || lowerVersion.contains("alpha") || lowerVersion.contains("snapshot");
+        String normalized = version.strip().toLowerCase();
+        return normalized.matches(".*(?:[-+_.]?dev(?:[-+_.]?\\d+)?)$")
+                || normalized.matches(".*(?:[-+_.]?beta\\d*)$")
+                || normalized.matches(".*(?:[-+_.]?alpha\\d*)$")
+                || normalized.matches(".*(?:[-+_.]?snapshot(?:[-+_.]?\\d+)?)$");
     }
 
     /**
-     * 语义化版本号工具类：解析、比较（支持x.y.z / x.y / x格式，忽略v前缀和后缀）
+     * 语义化版本号工具类：解析、比较（支持 x.y.z.w / x.y.z / x.y / x 格式，忽略 v 前缀和后缀）
      *
      * @param major 主版本
      * @param minor 次版本
      * @param patch 补丁版本
+     * @param build 构建版本
      */
-    private record SemanticVersion(int major, int minor, int patch) {
+    private record SemanticVersion(int major, int minor, int patch, int build) {
         /**
          * 解析版本号字符串为SemanticVersion对象
-         * 支持：v1.2.3、1.2、5、1.3.0-dev、v2.0-beta等格式
+         * 支持：v1.2.3.4、1.2、5、1.3.0-dev、v2.0-beta等格式
          */
         public static SemanticVersion parse(String versionStr) {
             if (versionStr == null || versionStr.isBlank()) {
@@ -160,11 +245,12 @@ public class UpdateCheckerUtils {
             if (!matcher.matches()) {
                 return null;
             }
-            // 解析主、次、补丁版本，未指定则为0
+            // 解析主、次、补丁、构建版本，未指定则为0
             int major = Integer.parseInt(matcher.group(1));
             int minor = matcher.group(2) != null ? Integer.parseInt(matcher.group(2)) : 0;
             int patch = matcher.group(3) != null ? Integer.parseInt(matcher.group(3)) : 0;
-            return new SemanticVersion(major, minor, patch);
+            int build = matcher.group(4) != null ? Integer.parseInt(matcher.group(4)) : 0;
+            return new SemanticVersion(major, minor, patch, build);
         }
 
         /**
@@ -181,7 +267,11 @@ public class UpdateCheckerUtils {
                 if (this.minor > target.minor) {
                     return true;
                 } else if (this.minor == target.minor) {
-                    return this.patch > target.patch;
+                    if (this.patch > target.patch) {
+                        return true;
+                    } else if (this.patch == target.patch) {
+                        return this.build > target.build;
+                    }
                 }
             }
             return false;
