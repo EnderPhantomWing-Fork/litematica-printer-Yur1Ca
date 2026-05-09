@@ -28,28 +28,38 @@ public class ConfigUtils {
     }
 
     public static boolean isPrintMode() {
-        return (isMultiMode() && Configs.Core.PRINT.getBooleanValue())
-                || Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.PRINTER;
+        if (isMultiMode()) {
+            return Configs.Core.PRINT.getBooleanValue();
+        }
+        return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.PRINTER;
     }
 
     public static boolean isMineMode() {
-        return (isMultiMode() && Configs.Core.MINE.getBooleanValue())
-                || Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.MINE;
+        if (isMultiMode()) {
+            return Configs.Core.MINE.getBooleanValue();
+        }
+        return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.MINE;
     }
 
     public static boolean isFillMode() {
-        return (isMultiMode() && Configs.Core.FILL.getBooleanValue())
-                || Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.FILL;
+        if (isMultiMode()) {
+            return Configs.Core.FILL.getBooleanValue();
+        }
+        return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.FILL;
     }
 
     public static boolean isFluidMode() {
-        return (isMultiMode() && Configs.Core.FLUID.getBooleanValue())
-                || Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.FLUID;
+        if (isMultiMode()) {
+            return Configs.Core.FLUID.getBooleanValue();
+        }
+        return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.FLUID;
     }
 
     public static boolean isBedrockMode() {
-        return (isMultiMode() && Configs.Hotkeys.BEDROCK.getBooleanValue())
-                || Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.BEDROCK;
+        if (isMultiMode()) {
+            return Configs.Hotkeys.BEDROCK.getBooleanValue();
+        }
+        return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.BEDROCK;
     }
 
     public static PrintModeType getPrintModeType() {

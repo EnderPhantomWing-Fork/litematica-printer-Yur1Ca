@@ -9,6 +9,7 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.I18n;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -90,17 +91,25 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "下落方块无支撑");
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(ctx.requiredBlockName().getString()));
                 return;
             } else if (level.getBlockState(downPos) != ctx.schematic.getBlockState(downPos)) {
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "支撑方块未就绪");
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_MISMATCH.getName(ctx.requiredBlockName().getString()));
                 return;
             }
         }
         Direction side = action.getValidSide(level, blockPos);
-        if (side == null) return;
+        if (side == null) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "无有效放置面");
+            return;
+        }
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
-        if (!InventoryUtils.switchToItems(player, reqItems)) return;
+        if (!InventoryUtils.switchToItems(player, reqItems)) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+            return;
+        }
         boolean useShift;
         if (action.getShift() == null) {
             useShift = (Implementation.isInteractive(level.getBlockState(blockPos.relative(side)).getBlock()) && !(action instanceof ClickAction))
@@ -115,8 +124,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
             ActionManager.INSTANCE.useProtocol = true;
         }
         ActionManager.INSTANCE.setLook(action.getPlayerLook());
+        HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
         if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");
             skipIteration.set(true);
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
         }
         setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
     }

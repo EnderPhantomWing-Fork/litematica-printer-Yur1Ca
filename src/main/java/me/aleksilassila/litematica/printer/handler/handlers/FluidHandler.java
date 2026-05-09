@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
@@ -49,8 +50,8 @@ public class FluidHandler extends ClientPlayerTickHandler {
         List<String> fileBlocks = Configs.Fluid.FLUID_REPLACE_BLOCK_LIST.getStrings();
         if (!fileBlocks.equals(fillBlocks)) {
             fillBlocks = new ArrayList<>(fileBlocks);
+            fillItems = new ArrayList<>();
             if (!fileBlocks.isEmpty()) {
-                fillItems = new ArrayList<>();
                 for (String itemName : fillBlocks) {
                     List<Item> list = BuiltInRegistries.ITEM.stream().filter(item -> FilterUtils.matchName(itemName, new ItemStack(item))).toList();
                     fillItems.addAll(list);
@@ -61,13 +62,20 @@ public class FluidHandler extends ClientPlayerTickHandler {
         List<String> fluidBlocks = Configs.Fluid.FLUID_LIST.getStrings();
         if (!fluidBlocks.equals(this.fluidBlocks)) {
             this.fluidBlocks = new ArrayList<>(fluidBlocks);
+            fluids = new ArrayList<>();
             if (!fluidBlocks.isEmpty()) {
-                fluids = new ArrayList<>();
                 for (String itemName : this.fluidBlocks) {
                     List<Fluid> list = BuiltInRegistries.FLUID.stream().filter(item -> FilterUtils.matchName(itemName, item.defaultFluidState().createLegacyBlock())).toList();
                     fluids.addAll(list);
                 }
             }
+        }
+        if (fillItems.isEmpty()) {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "无流体填充方块");
+        } else if (this.fluidBlocks.isEmpty()) {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "无目标流体配置");
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
         }
     }
 
@@ -81,14 +89,20 @@ public class FluidHandler extends ClientPlayerTickHandler {
         FluidState fluidState = level.getBlockState(blockPos).getFluidState();
         if (fluids.contains(fluidState.getType())) {
             if (!Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() && !fluidState.isSource()) {
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "跳过流动流体");
                 return;
             }
             if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "缺少流体填充方块");
                 return;
             }
             new Action().queueAction(blockPos, Direction.UP, false, player);
+            HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
             if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");
                 skipIteration.set(true);
+            } else {
+                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
             }
             setBlockPosCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
         }

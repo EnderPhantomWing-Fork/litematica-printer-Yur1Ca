@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
@@ -36,6 +37,10 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     public MineHandler() {
         super(NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
+    }
+
+    public int getRetryQueueSize() {
+        return this.retryQueue.size();
     }
 
     public static boolean mineRestriction(BlockState blockState) {
@@ -188,14 +193,24 @@ public class MineHandler extends ClientPlayerTickHandler {
         return switch (result) {
             case COMPLETED -> {
                 this.retryTargets.remove(blockPos);
+                HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.MINE, 1);
+                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "运行中");
                 yield true;
             }
             case COMPLETED_WAIT, IN_PROGRESS, ABORTED -> {
                 this.enqueueRetryTarget(blockPos);
+                if (result == BlockBreakResult.COMPLETED_WAIT) {
+                    HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "等待服务端确认");
+                } else if (result == BlockBreakResult.IN_PROGRESS) {
+                    HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "破坏中");
+                } else {
+                    HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "挖掘中断");
+                }
                 yield true;
             }
             case FAILED -> {
                 this.retryTargets.remove(blockPos);
+                HudStatsManager.INSTANCE.recordFailure(HudStatsManager.Mode.MINE, "破坏失败");
                 yield false;
             }
         };

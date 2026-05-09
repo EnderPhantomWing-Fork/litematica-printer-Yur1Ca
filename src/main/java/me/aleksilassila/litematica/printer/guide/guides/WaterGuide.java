@@ -20,6 +20,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.block.BubbleColumnBlock;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -43,7 +45,7 @@ public class WaterGuide extends Guide {
 
     @Override
     protected boolean canExecute() {
-        return BlockStateUtils.isWaterBlock(requiredState);
+        return requiredState.is(Blocks.WATER) || requiredBlock instanceof BubbleColumnBlock;
     }
 
     @Override

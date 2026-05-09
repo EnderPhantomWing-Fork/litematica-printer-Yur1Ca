@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -44,6 +45,10 @@ public final class BedrockController {
     private static int cleanupPressureThisTick = 0;
     private static int blockedCleanupDemandThisTick = 0;
     private static int confirmedSuccessesSinceReset = 0;
+    private static int submittedTargetsSinceReset = 0;
+    private static int failedTargetsSinceReset = 0;
+    private static int stuckTargetsSinceReset = 0;
+    private static String lastHudReason = "idle";
     private static int lastLoggedBedrockThroughput = Integer.MIN_VALUE;
     private static int lastLoggedBreakThroughput = Integer.MIN_VALUE;
     private static int lastLoggedBedrockInterval = Integer.MIN_VALUE;
@@ -67,9 +72,14 @@ public final class BedrockController {
         cleanupPressureThisTick = 0;
         blockedCleanupDemandThisTick = 0;
         confirmedSuccessesSinceReset = 0;
+        submittedTargetsSinceReset = 0;
+        failedTargetsSinceReset = 0;
+        stuckTargetsSinceReset = 0;
+        lastHudReason = "idle";
         lastLoggedBedrockThroughput = Integer.MIN_VALUE;
         lastLoggedBreakThroughput = Integer.MIN_VALUE;
         lastLoggedBedrockInterval = Integer.MIN_VALUE;
+        HudStatsManager.INSTANCE.resetMode(HudStatsManager.Mode.BEDROCK);
     }
 
     public static void tick() {
@@ -122,7 +132,11 @@ public final class BedrockController {
     }
 
     public static boolean canScanForTargets() {
-        return probeCanScanForTargets().accepted();
+        AcceptProbe probe = probeCanScanForTargets();
+        if (!probe.accepted()) {
+            lastHudReason = probe.reason();
+        }
+        return probe.accepted();
     }
 
     public static boolean canAccept(BlockPos pos) {
@@ -130,6 +144,7 @@ public final class BedrockController {
         if (probe.accepted()) {
             return true;
         }
+        lastHudReason = probe.reason();
         if ("out_of_range_bedrock".equals(probe.reason())) {
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
@@ -211,6 +226,7 @@ public final class BedrockController {
         }
         BedrockTarget target = new BedrockTarget(pos, level);
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
+            lastHudReason = "target_failed_on_create";
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
@@ -219,6 +235,7 @@ public final class BedrockController {
         }
         BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
         if (outOfRangePos != null) {
+            lastHudReason = "out_of_range_machine";
             setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
@@ -230,6 +247,7 @@ public final class BedrockController {
 
         BlockPos pendingCleanupPos = findPendingCleanupConflict(target);
         if (pendingCleanupPos != null) {
+            lastHudReason = "pending_cleanup";
             var blockingState = level.getBlockState(pendingCleanupPos);
             expeditePendingCleanup(pendingCleanupPos, blockingState);
             setRetryCooldown(pos, getPendingCleanupRetryTicks(blockingState));
@@ -245,6 +263,7 @@ public final class BedrockController {
 
         BedrockTarget conflict = findConflictTarget(target);
         if (conflict != null) {
+            lastHudReason = "machine_overlap";
             setRetryCooldown(pos, MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS);
             noteSubmitRejected("machine_overlap", pos, conflict.getBedrockPos());
             if (BedrockDebugLog.isEnabled()) {
@@ -261,6 +280,8 @@ public final class BedrockController {
         if (target.getStatus() != BedrockTarget.Status.FAILED) {
             TARGETS.add(target);
             acceptedThisTick++;
+            submittedTargetsSinceReset++;
+            lastHudReason = "running";
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("submit accepted bedrock=" + BedrockDebugLog.pos(pos)
                         + " piston=" + BedrockDebugLog.pos(target.getPistonPos())
@@ -539,6 +560,15 @@ public final class BedrockController {
         }
         if (shouldCountConfirmedSuccess(target, reason)) {
             confirmedSuccessesSinceReset++;
+            lastHudReason = "running";
+            HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.BEDROCK, 1);
+        }
+        if (target.getStatus() == BedrockTarget.Status.FAILED) {
+            failedTargetsSinceReset++;
+            lastHudReason = "failed";
+        } else if (target.getStatus() == BedrockTarget.Status.STUCK) {
+            stuckTargetsSinceReset++;
+            lastHudReason = "stuck";
         }
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("controller cleanup start bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
@@ -841,6 +871,7 @@ public final class BedrockController {
     }
 
     private static void noteSubmitRejected(String reason, BlockPos pos, BlockPos blocker) {
+        lastHudReason = reason;
         int rejectWeight = getSubmitRejectWeight(reason);
         if (rejectWeight > 0) {
             rejectedThisTick += rejectWeight;
@@ -1026,5 +1057,49 @@ public final class BedrockController {
         private static AcceptProbe reject(String reason) {
             return new AcceptProbe(false, reason);
         }
+    }
+
+    public static HudSnapshot getHudSnapshot() {
+        int totalFailures = failedTargetsSinceReset + stuckTargetsSinceReset;
+        int resolved = confirmedSuccessesSinceReset + totalFailures;
+        double successRate = resolved > 0 ? (double) confirmedSuccessesSinceReset / (double) resolved : 0.0D;
+        return new HudSnapshot(
+                TARGETS.size(),
+                countActiveTargets(),
+                CLEANUP_QUEUE.size(),
+                cleanupPressureThisTick,
+                blockedCleanupDemandThisTick,
+                confirmedSuccessesSinceReset,
+                submittedTargetsSinceReset,
+                failedTargetsSinceReset,
+                stuckTargetsSinceReset,
+                acceptedThisTick,
+                rejectedThisTick,
+                getConfiguredThroughput(),
+                getSubmitCap(),
+                getActiveTargetCap(),
+                successRate,
+                lastHudReason
+        );
+    }
+
+    public record HudSnapshot(
+            int totalTargets,
+            int activeTargets,
+            int cleanupQueueSize,
+            int cleanupPressure,
+            int blockedCleanupDemand,
+            int confirmedSuccesses,
+            int submittedTargets,
+            int failedTargets,
+            int stuckTargets,
+            int acceptedThisTick,
+            int rejectedThisTick,
+            int configuredThroughput,
+            int submitCap,
+            int activeCap,
+            double successRate,
+            String lastReason
+    ) {
     }
 }

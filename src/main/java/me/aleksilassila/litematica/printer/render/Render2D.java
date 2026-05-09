@@ -1,23 +1,19 @@
 package me.aleksilassila.litematica.printer.render;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.WorkingModeType;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.handler.GuiBlockInfo;
-import me.aleksilassila.litematica.printer.handler.handlers.GuiHandler;
+import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.render.Render2DUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Blocks;
 
 import java.awt.*;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -33,6 +29,8 @@ public class Render2D {
     private static final int SIDE_MARGIN = 10;
     private static final int COLUMN_SPACING = DEBUG_PADDING * 3;
     private static final int COMMON_INFO_OFFSET_Y = 10;
+    private static final int HUD_PADDING = 6;
+    private static final int HUD_LINE_HEIGHT = 12;
 
     private Render2D() {
     }
@@ -72,6 +70,11 @@ public class Render2D {
         if (Configs.Core.RENDER_HUD.getBooleanValue()) {
             drawHudInfo(scaledWidth, scaledHeight);
         }
+    }
+
+    public void renderHudPreview(float scaledWidth, float scaledHeight) {
+        Render2DUtils.ensureInitialized();
+        drawHudInfo(scaledWidth, scaledHeight);
     }
 
     // ==================== 调试信息绘制 ====================
@@ -241,7 +244,6 @@ public class Render2D {
     private void drawHudInfo(float scaledWidth, float scaledHeight) {
         int centerX = (int) (scaledWidth / 2);
         int centerY = (int) (scaledHeight / 2);
-        GuiHandler guiHandler = ClientPlayerTickManager.GUI;
 
         // 延迟过大警告
         if (Configs.Core.LAG_CHECK.getBooleanValue() &&
@@ -249,30 +251,174 @@ public class Render2D {
             Render2DUtils.drawString("延迟过大，已暂停运行", centerX, centerY - 22, Color.ORANGE, true, true);
         }
 
-        // 单模式进度条
-        WorkingModeType workMode = (WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue();
-        if (workMode.equals(WorkingModeType.SINGLE)) {
-            double progress = guiHandler.getTotalProgress().getProgress();
-            Render2DUtils.drawString((int) (progress * 100) + "%", centerX, centerY + 22, Color.WHITE, true, true);
-            drawProgressBar(centerX, centerY + 36, 40, 6, progress, new Color(0, 0, 0, 150), new Color(0, 255, 0, 255));
+        int baseX = Configs.Core.RENDER_HUD_X.getIntegerValue();
+        int baseY = Configs.Core.RENDER_HUD_Y.getIntegerValue();
+        float hudScale = getHudScale();
+        PanelLayout summaryLayout = computeHudPanelLayout(baseX, baseY, buildHudSummaryLines(), scaledWidth, scaledHeight, hudScale);
+        int panelBottom = drawHudPanel(summaryLayout);
+        PanelLayout modeLayout = computeHudPanelLayout(baseX, panelBottom + Math.max(4, Math.round(6 * hudScale)), buildHudModeLines(), scaledWidth, scaledHeight, hudScale);
+        drawHudPanel(modeLayout);
+    }
+
+    private int drawHudPanel(PanelLayout layout) {
+        if (layout.lines().isEmpty()) {
+            return layout.drawY();
         }
 
-        // 模式名称显示
-        if (ConfigUtils.isSingleMode()) {
-            String modeName = Configs.Core.WORK_MODE_TYPE.getOptionListValue().getDisplayName();
-            Render2DUtils.drawString(modeName, centerX, centerY + 52, Color.WHITE, true, true);
-        } else {
-            HashSet<String> modeNames = new HashSet<>();
-            for (ClientPlayerTickHandler handler : ClientPlayerTickManager.VALUES) {
-                if (handler.getId().equals(GuiHandler.NAME) ||
-                        handler.getEnableConfig() == null ||
-                        !handler.getEnableConfig().getBooleanValue()) {
-                    continue;
-                }
-                modeNames.add(handler.getEnableConfig().getPrettyName());
-            }
-            Render2DUtils.drawString(String.join(", ", modeNames), centerX, centerY + 52, Color.WHITE, true, true);
+        //#if MC >= 12111
+        int padding = Math.max(1, Math.round(HUD_PADDING * layout.scale()));
+        int lineStep = Math.max(1, Math.round(HUD_LINE_HEIGHT * layout.scale()));
+        int panelHeight = Math.max(1, Math.round(layout.baseHeight() * layout.scale()));
+        Render2DUtils.fill(
+                layout.drawX(),
+                layout.drawY(),
+                layout.drawX() + layout.scaledWidth(),
+                layout.drawY() + panelHeight,
+                new Color(0, 0, 0, 110)
+        );
+
+        int textX = layout.drawX() + padding;
+        int lineY = layout.drawY() + padding;
+        for (HudLine line : layout.lines()) {
+            Render2DUtils.drawStringScaled(line.text(), textX, lineY, line.color(), true, layout.scale());
+            lineY += lineStep;
         }
+        return layout.drawY() + panelHeight;
+        //#else
+        //$$ Render2DUtils.pushPose();
+        //$$ Render2DUtils.translate(layout.drawX(), layout.drawY(), 0.0D);
+        //$$ Render2DUtils.scale(layout.scale(), layout.scale(), 1.0F);
+        //$$ Render2DUtils.fill(0, 0, layout.baseWidth(), layout.baseHeight(), new Color(0, 0, 0, 110));
+        //$$
+        //$$ int lineY = HUD_PADDING;
+        //$$ for (HudLine line : layout.lines()) {
+        //$$     Render2DUtils.drawString(line.text(), HUD_PADDING, lineY, line.color(), true);
+        //$$     lineY += HUD_LINE_HEIGHT;
+        //$$ }
+        //$$ Render2DUtils.popPose();
+        //$$ return layout.bottom();
+        //#endif
+    }
+
+    private PanelLayout computeHudPanelLayout(int x, int y, List<HudLine> lines, float scaledWidth, float scaledHeight, float scale) {
+        if (lines.isEmpty()) {
+            return new PanelLayout(lines, x, y, 0, 0, 0, 0, scale);
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        int maxWidth = 0;
+        for (HudLine line : lines) {
+            maxWidth = Math.max(maxWidth, mc.font.width(line.text()));
+        }
+
+        int baseWidth = maxWidth + HUD_PADDING * 2;
+        int baseHeight = lines.size() * HUD_LINE_HEIGHT + HUD_PADDING * 2;
+        //#if MC >= 12111
+        int scaledWidthPixels = Math.max(1, Math.round(baseWidth * scale));
+        int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
+        //#else
+        //$$ int scaledWidthPixels = Math.max(1, Math.round(baseWidth * scale));
+        //$$ int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
+        //#endif
+        int drawX = Math.max(0, Math.min(x, (int) scaledWidth - scaledWidthPixels));
+        int drawY = Math.max(0, Math.min(y, (int) scaledHeight - scaledHeightPixels));
+        return new PanelLayout(lines, drawX, drawY, baseWidth, baseHeight, scaledWidthPixels, scaledHeightPixels, scale);
+    }
+
+    public HudBounds getHudBounds(float scaledWidth, float scaledHeight) {
+        float hudScale = getHudScale();
+        int baseX = Configs.Core.RENDER_HUD_X.getIntegerValue();
+        int baseY = Configs.Core.RENDER_HUD_Y.getIntegerValue();
+        PanelLayout summaryLayout = computeHudPanelLayout(baseX, baseY, buildHudSummaryLines(), scaledWidth, scaledHeight, hudScale);
+        PanelLayout modeLayout = computeHudPanelLayout(baseX, summaryLayout.bottom() + Math.max(4, Math.round(6 * hudScale)), buildHudModeLines(), scaledWidth, scaledHeight, hudScale);
+
+        if (summaryLayout.lines().isEmpty()) {
+            return new HudBounds(modeLayout.drawX(), modeLayout.drawY(), modeLayout.scaledWidth(), modeLayout.scaledHeight());
+        }
+        if (modeLayout.lines().isEmpty()) {
+            return new HudBounds(summaryLayout.drawX(), summaryLayout.drawY(), summaryLayout.scaledWidth(), summaryLayout.scaledHeight());
+        }
+
+        int minX = Math.min(summaryLayout.drawX(), modeLayout.drawX());
+        int minY = Math.min(summaryLayout.drawY(), modeLayout.drawY());
+        int maxX = Math.max(summaryLayout.right(), modeLayout.right());
+        int maxY = Math.max(summaryLayout.bottom(), modeLayout.bottom());
+        return new HudBounds(minX, minY, Math.max(0, maxX - minX), Math.max(0, maxY - minY));
+    }
+
+    private List<HudLine> buildHudSummaryLines() {
+        List<HudLine> lines = new ArrayList<>();
+        boolean enabled = ConfigUtils.isEnable();
+        String workMode = ((WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue()).equals(WorkingModeType.SINGLE) ? "单模" : "多模";
+        lines.add(new HudLine("工作: " + (enabled ? "运行中" : "已关闭") + " | 模式: " + workMode + " | 功能: " + getActiveModeSummary(), new Color(255, 255, 255, 255)));
+
+        String pauseReason = ClientPlayerTickManager.getLastPauseReason();
+        if (!enabled) {
+            lines.add(new HudLine("调度: 已关闭", new Color(255, 204, 102, 255)));
+        } else if (pauseReason != null) {
+            lines.add(new HudLine("调度: 暂停 | 原因: " + humanizeSchedulerReason(pauseReason), new Color(255, 180, 90, 255)));
+        } else {
+            lines.add(new HudLine("调度: 运行中 | Tick: " + ClientPlayerTickManager.getCurrentHandlerTime(), new Color(180, 255, 180, 255)));
+        }
+        return lines;
+    }
+
+    private List<HudLine> buildHudModeLines() {
+        List<HudLine> lines = new ArrayList<>();
+        appendCommonModeLines(lines, HudStatsManager.Mode.PRINT, getModeDisplayName(HudStatsManager.Mode.PRINT), ConfigUtils.isPrintMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.MINE, getModeDisplayName(HudStatsManager.Mode.MINE), ConfigUtils.isMineMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.FILL, getModeDisplayName(HudStatsManager.Mode.FILL), ConfigUtils.isFillMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.FLUID, getModeDisplayName(HudStatsManager.Mode.FLUID), ConfigUtils.isFluidMode());
+        appendBedrockLines(lines, ConfigUtils.isBedrockMode());
+        return lines;
+    }
+
+    private void appendCommonModeLines(List<HudLine> lines, HudStatsManager.Mode mode, String label, boolean active) {
+        if (!active) {
+            return;
+        }
+        HudStatsManager.Snapshot snapshot = HudStatsManager.INSTANCE.snapshot(mode);
+        String progressText = formatProgress(snapshot.finished(), snapshot.total(), snapshot.progress());
+        String status = snapshot.lastReason();
+        if (snapshot.total() <= 0 && snapshot.ratePerSecond() <= 0.0D && "运行中".equals(status)) {
+            status = "无目标";
+        }
+        lines.add(new HudLine("[" + label + "] 进度 " + progressText + " | 速率 " + formatRate(snapshot.ratePerSecond()) + "/s | 累计 " + snapshot.lifetimeUnits(), new Color(120, 220, 255, 255)));
+
+        String detail = "失败 " + snapshot.lifetimeFailures()
+                + " | 延后 " + snapshot.lifetimeDeferred();
+        if (mode == HudStatsManager.Mode.MINE) {
+            detail += " | 重试 " + ClientPlayerTickManager.MINE.getRetryQueueSize();
+        }
+        detail += " | 状态 " + status;
+        lines.add(new HudLine(detail, new Color(255, 255, 255, 255)));
+    }
+
+    private void appendBedrockLines(List<HudLine> lines, boolean active) {
+        if (!active) {
+            return;
+        }
+        HudStatsManager.Snapshot snapshot = HudStatsManager.INSTANCE.snapshot(HudStatsManager.Mode.BEDROCK);
+        BedrockController.HudSnapshot bedrock = BedrockController.getHudSnapshot();
+        String progressText = formatProgress(snapshot.finished(), snapshot.total(), snapshot.progress());
+        int totalFailures = bedrock.failedTargets() + bedrock.stuckTargets();
+        String status = humanizeBedrockReason(bedrock.lastReason());
+        if (bedrock.totalTargets() <= 0 && snapshot.total() <= 0 && "运行中".equals(status)) {
+            status = "无目标";
+        }
+
+        lines.add(new HudLine("[破基岩] 进度 " + progressText
+                + " | 成功率 " + formatPercent(bedrock.successRate())
+                + " | 成功速率 " + formatRate(snapshot.ratePerSecond()) + "/s", new Color(120, 255, 170, 255)));
+        lines.add(new HudLine("成功 " + bedrock.confirmedSuccesses()
+                + " | 失败 " + totalFailures
+                + " | 活跃 " + bedrock.activeTargets() + "/" + bedrock.totalTargets()
+                + " | 清理 " + bedrock.cleanupQueueSize()
+                + " | 压力 " + bedrock.cleanupPressure(), new Color(255, 255, 255, 255)));
+        lines.add(new HudLine("吞吐 " + bedrock.configuredThroughput()
+                + " | 提交 " + bedrock.acceptedThisTick() + "/" + bedrock.submitCap()
+                + " | 阻塞 " + bedrock.rejectedThisTick()
+                + " | 状态 " + status, new Color(255, 255, 255, 255)));
     }
 
     private void drawProgressBar(int x, int y, int barWidth, int barHeight, double progress,
@@ -289,6 +435,103 @@ public class Render2D {
         }
     }
 
+    private String getActiveModeSummary() {
+        if (!ConfigUtils.isEnable()) {
+            return "无";
+        }
+        List<String> names = new ArrayList<>();
+        if (ConfigUtils.isPrintMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.PRINT));
+        }
+        if (ConfigUtils.isMineMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.MINE));
+        }
+        if (ConfigUtils.isFillMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.FILL));
+        }
+        if (ConfigUtils.isFluidMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.FLUID));
+        }
+        if (ConfigUtils.isBedrockMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.BEDROCK));
+        }
+        return names.isEmpty() ? "无" : String.join(", ", names);
+    }
+
+    private String getModeDisplayName(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT -> "打印";
+            case MINE -> "挖掘";
+            case FILL -> "填充";
+            case FLUID -> "排流体";
+            case BEDROCK -> "破基岩";
+            case TOTAL -> "总计";
+        };
+    }
+
+    private String formatProgress(long finished, long total, double progress) {
+        if (total <= 0) {
+            return "--";
+        }
+        return formatPercent(progress) + " (" + finished + "/" + total + ")";
+    }
+
+    private String formatRate(double rate) {
+        return String.format("%.1f", rate);
+    }
+
+    private String formatPercent(double value) {
+        return (int) Math.round(clamp(value, 0.0D, 1.0D) * 100.0D) + "%";
+    }
+
+    private float getHudScale() {
+        return (float) clamp(Configs.Core.RENDER_HUD_SCALE.getIntegerValue() / 100.0D, 0.5D, 2.0D);
+    }
+
+    private String humanizeSchedulerReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "运行中";
+        }
+        if (reason.startsWith("shared_precheck")) {
+            return "容器打开或切物品中";
+        }
+        if (reason.startsWith("handler_precheck")) {
+            return "共享前置阻塞";
+        }
+        if (reason.startsWith("send_queue_wait_modify_look") || reason.startsWith("action_wait_modify_look")) {
+            return "等待转头";
+        }
+        if (reason.startsWith("lag_check")) {
+            return "延迟过大";
+        }
+        return reason;
+    }
+
+    private String humanizeBedrockReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "运行中";
+        }
+        return switch (reason) {
+            case "idle" -> "空闲";
+            case "running", "accepted" -> "运行中";
+            case "startup_serial" -> "启动串行";
+            case "accept_backpressure" -> "接受背压";
+            case "submit_cap" -> "提交上限";
+            case "active_cap" -> "活跃上限";
+            case "retry_cooldown" -> "重试冷却";
+            case "reserved_by_active_target" -> "被活跃任务占位";
+            case "out_of_range_bedrock", "out_of_range_machine", "out_of_range" -> "超出交互范围";
+            case "await_target_exposure" -> "等待目标暴露";
+            case "duplicate_active_target" -> "重复目标";
+            case "occupied_by_active_piston" -> "活塞占位";
+            case "pending_cleanup" -> "等待清理";
+            case "machine_overlap" -> "机器重叠";
+            case "target_failed_on_create", "failed" -> "任务失败";
+            case "stuck" -> "任务卡死";
+            default -> reason;
+        };
+    }
+
     // ==================== 静态工具方法 ====================
 
     private static String booleanToColoredString(boolean value) {
@@ -303,5 +546,34 @@ public class Render2D {
 
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private record HudLine(String text, Color color) {
+    }
+
+    private record PanelLayout(
+            List<HudLine> lines,
+            int drawX,
+            int drawY,
+            int baseWidth,
+            int baseHeight,
+            int scaledWidth,
+            int scaledHeight,
+            float scale
+    ) {
+        private int right() {
+            return this.drawX + this.scaledWidth;
+        }
+
+        private int bottom() {
+            return this.drawY + this.scaledHeight;
+        }
+    }
+
+    public record HudBounds(int x, int y, int width, int height) {
+        public boolean contains(double mouseX, double mouseY) {
+            return mouseX >= this.x && mouseX <= this.x + this.width
+                    && mouseY >= this.y && mouseY <= this.y + this.height;
+        }
     }
 }

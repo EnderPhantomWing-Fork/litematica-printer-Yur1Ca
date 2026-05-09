@@ -174,6 +174,24 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        public static final ConfigInteger RENDER_HUD_X = integer("renderHudX")
+                .defaultValue(10)
+                .range(0, 4096)
+                .setVisible(RENDER_HUD::getBooleanValue)
+                .build();
+
+        public static final ConfigInteger RENDER_HUD_Y = integer("renderHudY")
+                .defaultValue(10)
+                .range(0, 4096)
+                .setVisible(RENDER_HUD::getBooleanValue)
+                .build();
+
+        public static final ConfigInteger RENDER_HUD_SCALE = integer("renderHudScale")
+                .defaultValue(100)
+                .range(50, 200)
+                .setVisible(RENDER_HUD::getBooleanValue)
+                .build();
+
         // 核心 - 自动禁用打印机
         public static final ConfigBoolean AUTO_DISABLE_PRINTER = bool("printerAutoDisable")
                 .defaultValue(true)
@@ -224,6 +242,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 WORK_RANGE,
                 ITERATOR_TOTAL_PER_TICK,
                 RENDER_HUD,
+                RENDER_HUD_X,
+                RENDER_HUD_Y,
+                RENDER_HUD_SCALE,
                 LAG_CHECK,
                 LAG_CHECK_MAX,
                 CHECK_PLAYER_INTERACTION_RANGE,
@@ -743,5 +764,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 new fi.dy.masa.malilib.util.data.ModInfo(Reference.MOD_ID, Reference.MOD_NAME, ConfigUi::new)
         );
         //#endif
+    }
+
+    public static void saveToFile() {
+        Configs.INSTANCE.save();
     }
 }

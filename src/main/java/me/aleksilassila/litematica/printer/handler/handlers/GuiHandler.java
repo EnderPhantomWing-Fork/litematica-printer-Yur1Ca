@@ -7,6 +7,7 @@ import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTargetBlocks;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
@@ -97,11 +98,21 @@ public class GuiHandler extends ClientPlayerTickHandler {
 
     @Override
     protected void stopIteration(boolean interrupt) {
+        this.publishHudProgress();
         if (!interrupt) {
             for (Progress progress : progresses) {
                 progress.reset();
             }
         }
+    }
+
+    private void publishHudProgress() {
+        HudStatsManager.INSTANCE.recordProgress(HudStatsManager.Mode.TOTAL, totalProgress.finished, totalProgress.total);
+        HudStatsManager.INSTANCE.recordProgress(HudStatsManager.Mode.PRINT, printProgress.finished, printProgress.total);
+        HudStatsManager.INSTANCE.recordProgress(HudStatsManager.Mode.FLUID, fluidProgress.finished, fluidProgress.total);
+        HudStatsManager.INSTANCE.recordProgress(HudStatsManager.Mode.FILL, fillProgress.finished, fillProgress.total);
+        HudStatsManager.INSTANCE.recordProgress(HudStatsManager.Mode.MINE, mineProgress.finished, mineProgress.total);
+        HudStatsManager.INSTANCE.recordProgress(HudStatsManager.Mode.BEDROCK, bedrockProgress.finished, bedrockProgress.total);
     }
 
     @Getter

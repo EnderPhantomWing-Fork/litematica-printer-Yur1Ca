@@ -5,6 +5,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.FillBlockModeType;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
@@ -55,7 +56,9 @@ public class FillHandler extends ClientPlayerTickHandler {
                 List<String> strings = Configs.Fill.FILL_BLOCK_LIST.getStrings();
                 if (!strings.equals(fillCacheBlocklist)) {
                     fillCacheBlocklist = new ArrayList<>(strings);
+                    fillModeItemList = new Item[0];
                     if (strings.isEmpty()) {
+                        HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "填充列表为空");
                         return;
                     }
                     List<Item> items = new ArrayList<>();
@@ -74,11 +77,16 @@ public class FillHandler extends ClientPlayerTickHandler {
                     ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
                     if (!heldStack.isEmpty() && heldStack.getCount() > 0) {
                         fillModeItemList = new Item[]{player.getMainHandItem().getItem()};
+                        HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "运行中");
                     } else {
                         fillModeItemList = new Item[0];
+                        HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "主手无可填充方块");
                     }
                 }
                 break;
+        }
+        if (fillModeItemList.length == 0 && fillMode == FillBlockModeType.BLOCKLIST && !fillCacheBlocklist.isEmpty()) {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "列表无匹配方块");
         }
     }
 
@@ -103,6 +111,7 @@ public class FillHandler extends ClientPlayerTickHandler {
                 item.getBlock() instanceof FallingBlock block &&
                 FallingBlock.isFree(level.getBlockState(blockPos.below()))
         ) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "下落方块无支撑");
             MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(block.getName().getString()));
             return;
         }
@@ -112,22 +121,28 @@ public class FillHandler extends ClientPlayerTickHandler {
                 || (currentState.getBlock() instanceof LiquidBlock)
                 || Configs.Print.REPLACEABLE_LIST.getStrings().stream().anyMatch(s -> FilterUtils.matchName(s, currentState))
         ) {
-            if (handheld || InventoryUtils.switchToItems(player, this.fillModeItemList)) {
-                Action action;
-                if (ConfigUtils.getFillModeFacing() != null) {
-                    action = new Action()
-                            .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
-                            .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
-                } else {
-                    action = new Action()
-                            .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
-                }
-                ActionManager.INSTANCE.setLook(action.getPlayerLook());
-                if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook){
-                    skipIteration.set(true);
-                }
-                this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+            if (!handheld && !InventoryUtils.switchToItems(player, this.fillModeItemList)) {
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "缺少填充材料");
+                return;
             }
+            Action action;
+            if (ConfigUtils.getFillModeFacing() != null) {
+                action = new Action()
+                        .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
+                        .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
+            } else {
+                action = new Action()
+                        .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
+            }
+            ActionManager.INSTANCE.setLook(action.getPlayerLook());
+            HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);
+            if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook){
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "等待转头");
+                skipIteration.set(true);
+            } else {
+                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "运行中");
+            }
+            this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         }
     }
 

@@ -34,6 +34,10 @@ public class ClientPlayerTickManager {
     );
 
     public static void tick() {
+        if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
+            HudStatsManager.INSTANCE.resetAll();
+            lastPauseReason = null;
+        }
         boolean openHandler = isOpenHandler;
         boolean switchingItem = switchItem();
         if (openHandler || switchingItem) {
@@ -76,6 +80,10 @@ public class ClientPlayerTickManager {
 
     public static long getCurrentHandlerTime() {
         return ((MinecraftAccessor) Minecraft.getInstance()).getClientTickCount();
+    }
+
+    public static String getLastPauseReason() {
+        return lastPauseReason;
     }
 
     private static void pause(String reason) {
