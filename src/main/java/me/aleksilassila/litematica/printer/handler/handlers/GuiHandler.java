@@ -117,6 +117,7 @@ public class GuiHandler extends ClientPlayerTickHandler {
             this.total = 0;
             this.finished = 0;
             this.progress = 0.0;
+            this.lastProgress = 0.0;
         }
 
         public double getProgress() {
@@ -132,6 +133,7 @@ public class GuiHandler extends ClientPlayerTickHandler {
             this.total = 0;
             this.finished = 0;
             this.progress = 0.0;
+            this.lastProgress = 0.0;
         }
     }
 }
