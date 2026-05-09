@@ -185,8 +185,11 @@ public class InteractionUtils {
     }
 
     public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
-        this.forceDelayedDestroy = true;
-        return this.continueDestroyBlock(blockPos, direction, !Configs.Break.BREAK_USE_PACKET.getBooleanValue(), false);
+        MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
+        if (gameMode == null) {
+            return BlockBreakResult.FAILED;
+        }
+        return gameMode.litematica_printer$continueDestroyBlockForMine(blockPos, direction);
     }
 
     public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos) {

@@ -341,6 +341,83 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     }
 
     @Override
+    public BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
+        LocalPlayer player = minecraft.player;
+        ClientLevel level = minecraft.level;
+        MultiPlayerGameMode gameMode = minecraft.gameMode;
+        if (player == null || level == null || gameMode == null) {
+            return BlockBreakResult.FAILED;
+        }
+
+        BlockState blockState = level.getBlockState(blockPos);
+        if (blockState.isAir() || blockState.getBlock() instanceof LiquidBlock) {
+            this.litematica_printer$flushPendingBreakSound(blockPos);
+            this.litematica_printer$removePendingDelayedDestroy(blockPos);
+            if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
+                this.hasDelayedDestroy = false;
+                this.delayedDestroyLocalPrediction = false;
+            }
+            if (this.isDestroying && this.sameDestroyTarget(blockPos)) {
+                this.litematica_printer$resetDestroyState(player, blockPos);
+            }
+            this.litematica_printer$resetHitSoundState();
+            return BlockBreakResult.COMPLETED;
+        }
+
+        if (!level.getWorldBorder().isWithinBounds(blockPos)) {
+            return BlockBreakResult.FAILED;
+        }
+
+        if (ModLoadUtils.isTweakerooLoaded()) {
+            if (TweakerooUtils.isToolSwitchEnabled()) {
+                TweakerooUtils.trySwitchToEffectiveTool(blockPos);
+            }
+        } else {
+            ensureHasSentCarriedItem();
+        }
+
+        float destroyProgress = blockState.getDestroyProgress(player, level, blockPos);
+        boolean fastPath = player.getAbilities().instabuild || destroyProgress >= MINE_FAST_FINISH_PROGRESS;
+
+        if (!fastPath) {
+            if (this.hasDelayedDestroy) {
+                if (blockPos.equals(this.delayedDestroyPos)) {
+                    return BlockBreakResult.IN_PROGRESS;
+                }
+                return BlockBreakResult.ABORTED;
+            }
+            if (this.litematica_printer$hasPendingDelayedDestroy(blockPos)) {
+                return BlockBreakResult.IN_PROGRESS;
+            }
+
+            BlockBreakResult result = this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true);
+            if (result == BlockBreakResult.FAILED) {
+                return BlockBreakResult.FAILED;
+            }
+            if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
+                return BlockBreakResult.IN_PROGRESS;
+            }
+            if (this.litematica_printer$hasPendingDelayedDestroy(blockPos)) {
+                return BlockBreakResult.IN_PROGRESS;
+            }
+            return result;
+        }
+
+        if (this.isDestroying) {
+            this.litematica_printer$resetDestroyState(player, this.destroyBlockPos);
+        }
+        this.litematica_printer$resetHitSoundState();
+        this.litematica_printer$playBlockHitSound(player, level, blockState, blockPos, true);
+
+        NetworkUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
+        if (!player.getAbilities().instabuild) {
+            NetworkUtils.sendPacket(sequence -> getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence));
+        }
+        this.litematica_printer$resetHitSoundState();
+        return BlockBreakResult.COMPLETED_WAIT;
+    }
+
+    @Override
     public BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy) {
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;

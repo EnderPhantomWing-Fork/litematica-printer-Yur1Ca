@@ -6,16 +6,20 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
-import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
+import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
+import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
-import me.aleksilassila.litematica.printer.utils.mods.TweakerooUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST;
@@ -23,11 +27,12 @@ import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRIC
 import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTRICTION;
 
 public class MineHandler extends ClientPlayerTickHandler {
-    public final static String NAME = "mine";
-    private BlockPos currentBreakPos;
-    private boolean skipMainIteration;
-    private BlockPos lastInProgressLogPos;
-    private long lastInProgressLogTick = Long.MIN_VALUE;
+    public static final String NAME = "mine";
+
+    private final ArrayDeque<BlockPos> retryQueue = new ArrayDeque<>();
+    private final Set<BlockPos> retryTargets = new HashSet<>();
+    private int preprocessEffectiveExecutions;
+    private int remainingMainScanExecutions;
 
     public MineHandler() {
         super(NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
@@ -70,94 +75,162 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getMaxEffectiveExecutionsPerTick() {
-        return Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
-    }
-
-    @Override
-    public boolean canIterationBlockPos(BlockPos pos) {
-        if ((this.usesInternalMineCooldown() && isBlockPosOnCooldown(pos))
-                || CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
-            return false;
-        }
-        if (InteractionUtils.INSTANCE.isPendingDelayedDestroy(pos)) {
-            return false;
-        }
-        return InteractionUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos));
-    }
-
-    @Override
-    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(blockPos);
-        this.handleBreakResult(blockPos, result);
-        if (result == BlockBreakResult.IN_PROGRESS) {
-            skipIteration.set(true);
-        }
+        return this.remainingMainScanExecutions;
     }
 
     @Override
     protected void preprocess() {
-        this.skipMainIteration = false;
-        if (this.currentBreakPos == null || this.level == null) {
+        this.preprocessEffectiveExecutions = 0;
+        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        this.remainingMainScanExecutions = configuredBudget == 0 ? -1 : configuredBudget;
+
+        if (this.level == null || this.player == null) {
+            this.retryQueue.clear();
+            this.retryTargets.clear();
             return;
         }
-        if (!InteractionUtils.canBreakBlock(this.currentBreakPos) || !mineRestriction(this.level.getBlockState(this.currentBreakPos))) {
-            MineDebugLog.write("mine current target cleared pos=" + MineDebugLog.pos(this.currentBreakPos)
-                    + " reason=invalid_or_filtered"
-                    + " state=" + MineDebugLog.describeState(this.level.getBlockState(this.currentBreakPos)));
-            this.currentBreakPos = null;
-            return;
-        }
-        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(this.currentBreakPos);
-        this.handleBreakResult(this.currentBreakPos, result);
-        if (result == BlockBreakResult.IN_PROGRESS) {
-            this.skipMainIteration = true;
+
+        this.pruneRetryTargets();
+        this.processRetryTargets();
+
+        if (this.remainingMainScanExecutions > 0) {
+            this.remainingMainScanExecutions = Math.max(0, this.remainingMainScanExecutions - this.preprocessEffectiveExecutions);
         }
     }
 
     @Override
     protected boolean canIterate() {
-        return !this.skipMainIteration;
+        return this.remainingMainScanExecutions != 0;
     }
 
-    private void handleBreakResult(BlockPos blockPos, BlockBreakResult result) {
-        if (result == BlockBreakResult.IN_PROGRESS) {
-            this.currentBreakPos = blockPos;
-            long currentTick = ClientPlayerTickManager.getCurrentHandlerTime();
-            if (!blockPos.equals(this.lastInProgressLogPos) || currentTick - this.lastInProgressLogTick >= 10) {
-                MineDebugLog.write("mine in_progress pos=" + MineDebugLog.pos(blockPos)
-                        + " breakCooldown=" + getBreakCooldown());
-                this.lastInProgressLogPos = blockPos;
-                this.lastInProgressLogTick = currentTick;
-            }
+    @Override
+    public boolean canIterationBlockPos(BlockPos pos) {
+        return !CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)
+                && InteractionUtils.canBreakBlock(pos)
+                && mineRestriction(level.getBlockState(pos));
+    }
+
+    @Override
+    protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        boolean consumed = this.handleMineAttempt(blockPos);
+        if (!consumed) {
+            this.setIterationConsumedEffectiveExecution(false);
+        }
+    }
+
+    private void processRetryTargets() {
+        int retryBudget = this.getRetryBudget();
+        if (retryBudget <= 0 || this.retryQueue.isEmpty()) {
             return;
         }
 
-        if (blockPos.equals(this.lastInProgressLogPos)) {
-            this.lastInProgressLogPos = null;
-            this.lastInProgressLogTick = Long.MIN_VALUE;
-        }
-
-        if (this.currentBreakPos != null && this.currentBreakPos.equals(blockPos)) {
-            this.currentBreakPos = null;
-        }
-        if (result == BlockBreakResult.COMPLETED) {
-            if (this.usesInternalMineCooldown()) {
-                this.setBlockPosCooldown(blockPos, getBreakCooldown());
+        int available = this.retryQueue.size();
+        while (available-- > 0 && this.preprocessEffectiveExecutions < retryBudget) {
+            BlockPos pos = this.pollRetryTarget();
+            if (pos == null) {
+                break;
             }
-            MineDebugLog.write("mine completed pos=" + MineDebugLog.pos(blockPos)
-                    + " cooldown=" + (this.usesInternalMineCooldown() ? getBreakCooldown() : 0));
-        } else if (result == BlockBreakResult.COMPLETED_WAIT) {
-            if (this.usesInternalMineCooldown()) {
-                this.setBlockPosCooldown(blockPos, 2);
+            if (!this.canRetryTarget(pos)) {
+                continue;
             }
-            MineDebugLog.write("mine completed_wait pos=" + MineDebugLog.pos(blockPos)
-                    + " cooldown=" + (this.usesInternalMineCooldown() ? 2 : 0));
-        } else if (result == BlockBreakResult.FAILED) {
-            MineDebugLog.write("mine failed pos=" + MineDebugLog.pos(blockPos));
+            if (this.handleMineAttempt(pos)) {
+                this.preprocessEffectiveExecutions++;
+            }
         }
     }
 
-    private boolean usesInternalMineCooldown() {
-        return !(ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isDisableBlockBreakCooldownEnabled());
+    private int getRetryBudget() {
+        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        if (configuredBudget < 0) {
+            return -1;
+        }
+        if (configuredBudget == 0) {
+            return this.retryQueue.size();
+        }
+        int preferredBudget = Math.max(1, configuredBudget / 2);
+        int maxRetryBudget = configuredBudget > 1 ? configuredBudget - 1 : configuredBudget;
+        return Math.min(this.retryQueue.size(), Math.min(preferredBudget, maxRetryBudget));
+    }
+
+    private boolean canRetryTarget(BlockPos pos) {
+        if (this.level == null || this.player == null || pos == null) {
+            return false;
+        }
+        if (!this.canReachIterationPosition(pos)) {
+            return false;
+        }
+        if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+            return false;
+        }
+        if (!ConfigUtils.isPositionInSelectionRange(this.player, pos, Configs.Mine.MINE_SELECTION_TYPE)) {
+            return false;
+        }
+        return this.canIterationBlockPos(pos);
+    }
+
+    private void pruneRetryTargets() {
+        Iterator<BlockPos> iterator = this.retryQueue.iterator();
+        while (iterator.hasNext()) {
+            BlockPos pos = iterator.next();
+            if (!this.canRetryTarget(pos)) {
+                iterator.remove();
+                this.retryTargets.remove(pos);
+            }
+        }
+    }
+
+    private boolean handleMineAttempt(BlockPos blockPos) {
+        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(blockPos);
+        return this.handleMineResult(blockPos, result);
+    }
+
+    private boolean handleMineResult(BlockPos blockPos, BlockBreakResult result) {
+        return switch (result) {
+            case COMPLETED -> {
+                this.retryTargets.remove(blockPos);
+                yield true;
+            }
+            case COMPLETED_WAIT, IN_PROGRESS, ABORTED -> {
+                this.enqueueRetryTarget(blockPos);
+                yield true;
+            }
+            case FAILED -> {
+                this.retryTargets.remove(blockPos);
+                yield false;
+            }
+        };
+    }
+
+    private void enqueueRetryTarget(BlockPos pos) {
+        if (pos == null || this.retryTargets.contains(pos)) {
+            return;
+        }
+        BlockPos immutablePos = pos.immutable();
+        this.retryQueue.addLast(immutablePos);
+        this.retryTargets.add(immutablePos);
+
+        int maxRetryTargets = this.getMaxRetryTargets();
+        while (this.retryQueue.size() > maxRetryTargets) {
+            BlockPos removed = this.retryQueue.pollFirst();
+            if (removed != null) {
+                this.retryTargets.remove(removed);
+            }
+        }
+    }
+
+    private BlockPos pollRetryTarget() {
+        BlockPos pos = this.retryQueue.pollFirst();
+        if (pos != null) {
+            this.retryTargets.remove(pos);
+        }
+        return pos;
+    }
+
+    private int getMaxRetryTargets() {
+        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        if (configuredBudget <= 0) {
+            return 512;
+        }
+        return Math.max(128, configuredBudget * 16);
     }
 }

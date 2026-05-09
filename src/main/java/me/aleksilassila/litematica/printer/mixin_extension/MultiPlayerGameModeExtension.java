@@ -16,6 +16,10 @@ public interface MultiPlayerGameModeExtension {
 
     BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy);
 
+    default BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
+        return this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true);
+    }
+
     default boolean litematica_printer$isPendingDelayedDestroy(BlockPos blockPos) {
         return false;
     }
