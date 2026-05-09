@@ -22,6 +22,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.shapes.CollisionContext;
 
 import java.util.HashMap;
@@ -49,6 +50,9 @@ public class WaterGuide extends Guide {
     protected Result onBuildAction(BlockMatchResult state) {
         cleanupExpiredBreaks();
         if (client.gameMode == null || client.gameMode.getPlayerMode().isCreative()) {
+            return Result.SKIP;
+        }
+        if (shouldSkipWaterloggedTarget()) {
             return Result.SKIP;
         }
         if (!Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()) {
@@ -92,6 +96,12 @@ public class WaterGuide extends Guide {
         //#else
         //$$ return belowState.getMaterial().blocksMotion() || belowState.getMaterial().isLiquid();
         //#endif
+    }
+
+    private boolean shouldSkipWaterloggedTarget() {
+        return Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue()
+                && requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
+                && requiredState.getValue(BlockStateProperties.WATERLOGGED);
     }
 
     private void markWaitingForWaterSync() {

@@ -437,6 +437,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(Blocks.SNOW, Blocks.LAVA, Blocks.WATER, Blocks.BUBBLE_COLUMN, Blocks.SHORT_GRASS)
                 .build();
 
+        // 跳过含水方块
+        public static final ConfigBoolean SKIP_WATERLOGGED_BLOCK = bool("printSkipWaterlogged")
+                .defaultValue(false)
+                .build();
+
         // 替换珊瑚
         public static final ConfigBoolean REPLACE_CORAL = bool("printReplaceCoral")
                 .defaultValue(false)
@@ -504,6 +509,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SKIP_LIST,
                 PRINT_REPLACE,
                 REPLACEABLE_LIST,
+                SKIP_WATERLOGGED_BLOCK,
                 PRINT_ICE_FOR_WATER,
                 SAFELY_OBSERVER,
                 STRIP_LOGS,
