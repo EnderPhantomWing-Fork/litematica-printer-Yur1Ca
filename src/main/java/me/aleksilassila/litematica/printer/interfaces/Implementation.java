@@ -60,6 +60,11 @@ public class Implementation {
      * @return 是否可以交互
      */
     public static boolean isInteractive(Block block) {
+        //#if MC > 12004
+        if (block == Blocks.VAULT) {
+            return true;
+        }
+        //#endif
         for (Class<?> clazz : interactiveBlocks) {
             if (clazz.isInstance(block)) {
                 return true;

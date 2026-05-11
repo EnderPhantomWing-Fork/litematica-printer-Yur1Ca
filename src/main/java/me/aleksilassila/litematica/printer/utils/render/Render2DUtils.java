@@ -1,13 +1,8 @@
 package me.aleksilassila.litematica.printer.utils.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import me.aleksilassila.litematica.printer.utils.minecraft.StringUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-//#if MC >= 12111
-import net.minecraft.client.gui.ActiveTextCollector;
-import net.minecraft.client.gui.TextAlignment;
-//#endif
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -26,7 +21,6 @@ import net.minecraft.client.renderer.RenderPipelines;
 
 
 import java.awt.*;
-import java.lang.reflect.Method;
 
 /**
  * 封装了原版 GUI 渲染的底层工具类，兼容多版本：
@@ -92,133 +86,59 @@ public class Render2DUtils {
     }
 
     public static void drawStringScaled(String text, int x, int y, Color color, boolean withShadow, float scale) {
-        //#if MC >= 12111
         ensureInitialized();
         if (Math.abs(scale - 1.0F) < 0.001F) {
             drawString(text, x, y, color, withShadow);
             return;
         }
-        ActiveTextCollector collector = guiGraphics.textRenderer();
-        ActiveTextCollector.Parameters parameters = collector.defaultParameters().withScale(scale);
-        collector.accept(
-                TextAlignment.LEFT,
-                x,
-                y,
-                parameters,
-                StringUtils.literal(text).withStyle(style -> style.withColor(color.getRGB()))
-        );
-        //#else
-        //$$ drawString(text, x, y, color, withShadow);
-        //#endif
+        pushPose();
+        translate(x, y, 0.0D);
+        scale(scale, scale, 1.0F);
+        drawString(text, 0, 0, color, withShadow);
+        popPose();
     }
 
     public static void pushPose() {
-        invokePoseMethod(new String[]{"pushPose", "pushMatrix"}, new Object[0]);
+        ensureInitialized();
+        //#if MC >= 12111
+        guiGraphics.pose().pushMatrix();
+        //#elseif MC > 11904
+        //$$ guiGraphics.pose().pushPose();
+        //#else
+        //$$ poseStack.pushPose();
+        //#endif
     }
 
     public static void popPose() {
-        invokePoseMethod(new String[]{"popPose", "popMatrix"}, new Object[0]);
+        ensureInitialized();
+        //#if MC >= 12111
+        guiGraphics.pose().popMatrix();
+        //#elseif MC > 11904
+        //$$ guiGraphics.pose().popPose();
+        //#else
+        //$$ poseStack.popPose();
+        //#endif
     }
 
     public static void translate(double x, double y, double z) {
-        invokePoseMethod(
-                new String[]{"translate"},
-                new Object[]{x, y, z},
-                new Object[]{x, y},
-                new Object[]{(float) x, (float) y, (float) z},
-                new Object[]{(float) x, (float) y}
-        );
+        ensureInitialized();
+        //#if MC >= 12111
+        guiGraphics.pose().translate((float) x, (float) y);
+        //#elseif MC > 11904
+        //$$ guiGraphics.pose().translate((float) x, (float) y, (float) z);
+        //#else
+        //$$ poseStack.translate(x, y, z);
+        //#endif
     }
 
     public static void scale(float x, float y, float z) {
-        invokePoseMethod(
-                new String[]{"scale"},
-                new Object[]{x, y, z},
-                new Object[]{x, y},
-                new Object[]{x}
-        );
-    }
-
-    private static void invokePoseMethod(String[] methodNames, Object[]... argumentVariants) {
         ensureInitialized();
-        try {
-            Object target = getPoseTarget();
-            if (target == null) {
-                return;
-            }
-            for (Method method : target.getClass().getMethods()) {
-                if (!matchesMethodName(method.getName(), methodNames)) {
-                    continue;
-                }
-                for (Object[] args : argumentVariants) {
-                    if (method.getParameterCount() != args.length) {
-                        continue;
-                    }
-                    Object[] convertedArgs = tryConvertArguments(method.getParameterTypes(), args);
-                    if (convertedArgs != null) {
-                        method.invoke(target, convertedArgs);
-                        return;
-                    }
-                }
-            }
-        } catch (ReflectiveOperationException ignored) {
-        }
-    }
-
-    private static boolean matchesMethodName(String methodName, String[] candidates) {
-        for (String candidate : candidates) {
-            if (candidate.equals(methodName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static Object[] tryConvertArguments(Class<?>[] parameterTypes, Object[] args) {
-        Object[] converted = new Object[args.length];
-        for (int i = 0; i < args.length; i++) {
-            Object value = args[i];
-            Class<?> type = parameterTypes[i];
-            Object coerced = coerceArgument(type, value);
-            if (coerced == null && value != null) {
-                return null;
-            }
-            converted[i] = coerced;
-        }
-        return converted;
-    }
-
-    private static Object coerceArgument(Class<?> type, Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (!(value instanceof Number number)) {
-            return type.isInstance(value) || !type.isPrimitive() ? value : null;
-        }
-        if (type == float.class || type == Float.class) {
-            return number.floatValue();
-        }
-        if (type == double.class || type == Double.class) {
-            return number.doubleValue();
-        }
-        if (type == int.class || type == Integer.class) {
-            return number.intValue();
-        }
-        if (type == long.class || type == Long.class) {
-            return number.longValue();
-        }
-        return type.isInstance(value) ? value : null;
-    }
-
-    private static Object getPoseTarget() throws ReflectiveOperationException {
-        //#if MC > 11904
-        if (guiGraphics == null) {
-            return null;
-        }
-        Method poseMethod = guiGraphics.getClass().getMethod("pose");
-        return poseMethod.invoke(guiGraphics);
+        //#if MC >= 12111
+        guiGraphics.pose().scale(x, y);
+        //#elseif MC > 11904
+        //$$ guiGraphics.pose().scale(x, y, z);
         //#else
-        //$$ return poseStack;
+        //$$ poseStack.scale(x, y, z);
         //#endif
     }
 
