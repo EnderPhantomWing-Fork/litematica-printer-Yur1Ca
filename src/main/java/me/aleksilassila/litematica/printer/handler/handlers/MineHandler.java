@@ -192,12 +192,14 @@ public class MineHandler extends ClientPlayerTickHandler {
     private boolean handleMineResult(BlockPos blockPos, BlockBreakResult result) {
         return switch (result) {
             case COMPLETED -> {
+                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
                 this.retryTargets.remove(blockPos);
                 HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.MINE, 1);
                 HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "运行中");
                 yield true;
             }
             case COMPLETED_WAIT, IN_PROGRESS, ABORTED -> {
+                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
                 this.enqueueRetryTarget(blockPos);
                 if (result == BlockBreakResult.COMPLETED_WAIT) {
                     HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "等待服务端确认");

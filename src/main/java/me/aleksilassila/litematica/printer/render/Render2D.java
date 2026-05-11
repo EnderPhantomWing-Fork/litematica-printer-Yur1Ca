@@ -378,20 +378,14 @@ public class Render2D {
             return;
         }
         HudStatsManager.Snapshot snapshot = HudStatsManager.INSTANCE.snapshot(mode);
-        String progressText = formatProgress(snapshot.finished(), snapshot.total(), snapshot.progress());
-        String status = snapshot.lastReason();
-        if (snapshot.total() <= 0 && snapshot.ratePerSecond() <= 0.0D && "运行中".equals(status)) {
-            status = "无目标";
+        double actualRate = getDisplayedModeRate(mode, snapshot);
+        String status = humanizeCommonModeReason(mode, snapshot, actualRate);
+        StringBuilder text = new StringBuilder("[").append(label).append("] ");
+        if (shouldDisplayModeRate(mode)) {
+            text.append(getModeRateLabel(mode)).append(' ').append(formatRate(actualRate)).append("/s | ");
         }
-        lines.add(new HudLine("[" + label + "] 进度 " + progressText + " | 速率 " + formatRate(snapshot.ratePerSecond()) + "/s | 累计 " + snapshot.lifetimeUnits(), new Color(120, 220, 255, 255)));
-
-        String detail = "失败 " + snapshot.lifetimeFailures()
-                + " | 延后 " + snapshot.lifetimeDeferred();
-        if (mode == HudStatsManager.Mode.MINE) {
-            detail += " | 重试 " + ClientPlayerTickManager.MINE.getRetryQueueSize();
-        }
-        detail += " | 状态 " + status;
-        lines.add(new HudLine(detail, new Color(255, 255, 255, 255)));
+        text.append("设置 ").append(formatModeSettings(mode)).append(" | 状态 ").append(status);
+        lines.add(new HudLine(text.toString(), new Color(120, 220, 255, 255)));
     }
 
     private void appendBedrockLines(List<HudLine> lines, boolean active) {
@@ -505,6 +499,71 @@ public class Render2D {
             return "延迟过大";
         }
         return reason;
+    }
+
+    private boolean shouldDisplayModeRate(HudStatsManager.Mode mode) {
+        return mode == HudStatsManager.Mode.PRINT
+                || mode == HudStatsManager.Mode.MINE
+                || mode == HudStatsManager.Mode.FILL
+                || mode == HudStatsManager.Mode.FLUID;
+    }
+
+    private double getDisplayedModeRate(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot) {
+        return switch (mode) {
+            case PRINT -> snapshot.completedRatePerSecond();
+            case MINE, FILL, FLUID -> snapshot.completedRatePerSecond();
+            default -> 0.0D;
+        };
+    }
+
+    private String getModeRateLabel(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT, FILL, FLUID -> "放置";
+            case MINE -> "破坏";
+            case BEDROCK -> "成功";
+            case TOTAL -> "速率";
+        };
+    }
+
+    private String humanizeCommonModeReason(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot, double actualRate) {
+        String reason = snapshot.lastReason();
+        if (reason == null || reason.isBlank() || "空闲".equals(reason)) {
+            return actualRate > 0.0D ? "工作中" : "无目标";
+        }
+        if (snapshot.total() <= 0
+                && actualRate <= 0.0D
+                && !reason.contains("缺少")
+                && !reason.contains("配置")
+                && !reason.contains("列表为空")
+                && !reason.contains("列表无匹配")
+                && !reason.contains("失败")) {
+            return "无目标";
+        }
+        if (reason.contains("失败")) {
+            return "失败";
+        }
+        if (reason.contains("配置") || reason.contains("列表为空") || reason.contains("列表无匹配")) {
+            return "未配置";
+        }
+        if (reason.contains("缺少") || reason.contains("主手无可填充方块")) {
+            return "缺少方块";
+        }
+        if ("运行中".equals(reason) && snapshot.total() <= 0 && actualRate <= 0.0D) {
+            return "无目标";
+        }
+        return "工作中";
+    }
+
+    private String formatModeSettings(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT, FILL, FLUID -> Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue()
+                    + "/t 间隔" + Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+            case MINE -> Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue()
+                    + "/t 间隔" + Configs.Break.BREAK_INTERVAL.getIntegerValue();
+            case BEDROCK -> Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue()
+                    + "/t 间隔" + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
+            case TOTAL -> "--";
+        };
     }
 
     private String humanizeBedrockReason(String reason) {

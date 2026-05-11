@@ -1,12 +1,24 @@
 package me.aleksilassila.litematica.printer.handler;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
 public final class HudStatsManager {
     public static final HudStatsManager INSTANCE = new HudStatsManager();
-    private static final int RATE_WINDOW_TICKS = 20;
+    private static final long RATE_WINDOW_NANOS = 1_000_000_000L;
+    private static final int PRINT_CONFIRM_TIMEOUT_TICKS = 80;
 
     private final EnumMap<Mode, ModeStats> stats = new EnumMap<>(Mode.class);
+    private final Map<BlockPos, PendingBlockState> pendingPrintStates = new HashMap<>();
+    private final Map<BlockPos, Long> pendingMineTargets = new HashMap<>();
+    private final Map<BlockPos, PendingStateChange> pendingFillTargets = new HashMap<>();
+    private final Map<BlockPos, PendingStateChange> pendingFluidTargets = new HashMap<>();
 
     private HudStatsManager() {
         for (Mode mode : Mode.values()) {
@@ -15,40 +27,154 @@ public final class HudStatsManager {
     }
 
     public void resetAll() {
+        this.pendingPrintStates.clear();
+        this.pendingMineTargets.clear();
+        this.pendingFillTargets.clear();
+        this.pendingFluidTargets.clear();
         for (Mode mode : Mode.values()) {
             this.resetMode(mode);
         }
     }
 
     public void resetMode(Mode mode) {
+        switch (mode) {
+            case PRINT -> this.pendingPrintStates.clear();
+            case MINE -> this.pendingMineTargets.clear();
+            case FILL -> this.pendingFillTargets.clear();
+            case FLUID -> this.pendingFluidTargets.clear();
+            default -> {
+            }
+        }
         this.stats.get(mode).reset();
     }
 
     public void recordProgress(Mode mode, long finished, long total) {
-        this.stats.get(mode).recordProgress(finished, total);
+        this.stats.get(mode).recordProgress(mode, ClientPlayerTickManager.getCurrentHandlerTime(), finished, total);
     }
 
     public void recordRateUnit(Mode mode, int count) {
         if (count <= 0) {
             return;
         }
-        this.stats.get(mode).recordRateUnit(ClientPlayerTickManager.getCurrentHandlerTime(), count);
+        this.stats.get(mode).recordRateUnit(count);
     }
 
     public void recordFailure(Mode mode, String reason) {
-        this.stats.get(mode).recordFailure(ClientPlayerTickManager.getCurrentHandlerTime(), reason);
+        this.stats.get(mode).recordFailure(reason);
     }
 
     public void recordDeferred(Mode mode, String reason) {
-        this.stats.get(mode).recordDeferred(ClientPlayerTickManager.getCurrentHandlerTime(), reason);
+        this.stats.get(mode).recordDeferred(reason);
     }
 
     public void recordStatus(Mode mode, String reason) {
         this.stats.get(mode).recordStatus(reason);
     }
 
+    public void trackExpectedBlockState(Mode mode, BlockPos pos, BlockState expectedState) {
+        if (mode != Mode.PRINT || pos == null || expectedState == null) {
+            return;
+        }
+        Minecraft client = Minecraft.getInstance();
+        if (client.level != null && client.level.getBlockState(pos).equals(expectedState)) {
+            return;
+        }
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        this.pendingPrintStates.put(pos.immutable(), new PendingBlockState(expectedState, now + PRINT_CONFIRM_TIMEOUT_TICKS));
+    }
+
+    public void trackExpectedMineClear(Mode mode, BlockPos pos) {
+        if (mode != Mode.MINE || pos == null) {
+            return;
+        }
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        this.pendingMineTargets.put(pos.immutable(), now + PRINT_CONFIRM_TIMEOUT_TICKS);
+    }
+
+    public void trackExpectedBlockChange(Mode mode, BlockPos pos, BlockState originalState) {
+        if (pos == null || originalState == null) {
+            return;
+        }
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        PendingStateChange pending = new PendingStateChange(originalState, now + PRINT_CONFIRM_TIMEOUT_TICKS);
+        if (mode == Mode.FILL) {
+            this.pendingFillTargets.put(pos.immutable(), pending);
+        } else if (mode == Mode.FLUID) {
+            this.pendingFluidTargets.put(pos.immutable(), pending);
+        }
+    }
+
     public Snapshot snapshot(Mode mode) {
-        return this.stats.get(mode).snapshot(ClientPlayerTickManager.getCurrentHandlerTime());
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        this.flushConfirmedActions(now);
+        return this.stats.get(mode).snapshot(now);
+    }
+
+    private void flushConfirmedActions(long now) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
+            return;
+        }
+        flushConfirmedPrintPlacements(client, now);
+        flushConfirmedMineClears(client, now);
+        flushConfirmedBlockChanges(client, now, Mode.FILL, this.pendingFillTargets);
+        flushConfirmedBlockChanges(client, now, Mode.FLUID, this.pendingFluidTargets);
+    }
+
+    private void flushConfirmedPrintPlacements(Minecraft client, long now) {
+        if (this.pendingPrintStates.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<BlockPos, PendingBlockState>> iterator = this.pendingPrintStates.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, PendingBlockState> entry = iterator.next();
+            PendingBlockState pending = entry.getValue();
+            if (now > pending.expireTick()) {
+                iterator.remove();
+                continue;
+            }
+            if (client.level.getBlockState(entry.getKey()).equals(pending.expectedState())) {
+                this.stats.get(Mode.PRINT).recordConfirmedUnit(now, 1);
+                iterator.remove();
+            }
+        }
+    }
+
+    private void flushConfirmedMineClears(Minecraft client, long now) {
+        if (this.pendingMineTargets.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<BlockPos, Long>> iterator = this.pendingMineTargets.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, Long> entry = iterator.next();
+            if (now > entry.getValue()) {
+                iterator.remove();
+                continue;
+            }
+            if (client.level.getBlockState(entry.getKey()).isAir()) {
+                this.stats.get(Mode.MINE).recordConfirmedUnit(now, 1);
+                iterator.remove();
+            }
+        }
+    }
+
+    private void flushConfirmedBlockChanges(Minecraft client, long now, Mode mode, Map<BlockPos, PendingStateChange> pendingTargets) {
+        if (pendingTargets.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<BlockPos, PendingStateChange>> iterator = pendingTargets.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, PendingStateChange> entry = iterator.next();
+            PendingStateChange pending = entry.getValue();
+            if (now > pending.expireTick()) {
+                iterator.remove();
+                continue;
+            }
+            if (!client.level.getBlockState(entry.getKey()).equals(pending.originalState())) {
+                this.stats.get(mode).recordConfirmedUnit(now, 1);
+                iterator.remove();
+            }
+        }
     }
 
     public enum Mode {
@@ -65,6 +191,7 @@ public final class HudStatsManager {
             long total,
             double progress,
             double ratePerSecond,
+            double completedRatePerSecond,
             double failuresPerSecond,
             double deferredPerSecond,
             long lifetimeUnits,
@@ -76,6 +203,7 @@ public final class HudStatsManager {
 
     private static final class ModeStats {
         private final RollingCounter rateCounter = new RollingCounter();
+        private final RollingCounter completedCounter = new RollingCounter();
         private final RollingCounter failureCounter = new RollingCounter();
         private final RollingCounter deferredCounter = new RollingCounter();
 
@@ -96,30 +224,36 @@ public final class HudStatsManager {
             this.lifetimeDeferred = 0;
             this.lastReason = "空闲";
             this.rateCounter.reset();
+            this.completedCounter.reset();
             this.failureCounter.reset();
             this.deferredCounter.reset();
         }
 
-        private void recordProgress(long finished, long total) {
+        private void recordProgress(Mode mode, long tick, long finished, long total) {
             this.finished = Math.max(0L, finished);
             this.total = Math.max(0L, total);
             this.progress = this.total > 0 ? (double) this.finished / (double) this.total : 0.0D;
         }
 
-        private void recordRateUnit(long tick, int count) {
-            this.rateCounter.add(tick, count);
+        private void recordRateUnit(int count) {
+            this.rateCounter.add(count);
             this.lifetimeUnits += count;
             this.lastReason = "运行中";
         }
 
-        private void recordFailure(long tick, String reason) {
-            this.failureCounter.add(tick, 1);
+        private void recordConfirmedUnit(long tick, int count) {
+            this.completedCounter.add(count);
+            this.lastReason = "运行中";
+        }
+
+        private void recordFailure(String reason) {
+            this.failureCounter.add(1);
             this.lifetimeFailures++;
             this.lastReason = normalizeReason(reason);
         }
 
-        private void recordDeferred(long tick, String reason) {
-            this.deferredCounter.add(tick, 1);
+        private void recordDeferred(String reason) {
+            this.deferredCounter.add(1);
             this.lifetimeDeferred++;
             this.lastReason = normalizeReason(reason);
         }
@@ -133,9 +267,10 @@ public final class HudStatsManager {
                     this.finished,
                     this.total,
                     this.progress,
-                    this.rateCounter.sumRecent(now),
-                    this.failureCounter.sumRecent(now),
-                    this.deferredCounter.sumRecent(now),
+                    this.rateCounter.sumRecent(),
+                    this.completedCounter.sumRecent(),
+                    this.failureCounter.sumRecent(),
+                    this.deferredCounter.sumRecent(),
                     this.lifetimeUnits,
                     this.lifetimeFailures,
                     this.lifetimeDeferred,
@@ -148,38 +283,71 @@ public final class HudStatsManager {
         }
     }
 
+    private record PendingBlockState(BlockState expectedState, long expireTick) {
+    }
+
+    private record PendingStateChange(BlockState originalState, long expireTick) {
+    }
+
     private static final class RollingCounter {
-        private final long[] ticks = new long[RATE_WINDOW_TICKS];
-        private final int[] values = new int[RATE_WINDOW_TICKS];
+        private static final int MAX_EVENTS = 2048;
+        private final long[] timestamps = new long[MAX_EVENTS];
+        private final int[] values = new int[MAX_EVENTS];
+        private int head;
+        private int size;
+        private int total;
 
         private RollingCounter() {
             this.reset();
         }
 
         private void reset() {
-            for (int i = 0; i < RATE_WINDOW_TICKS; i++) {
-                this.ticks[i] = Long.MIN_VALUE;
+            for (int i = 0; i < MAX_EVENTS; i++) {
+                this.timestamps[i] = 0L;
                 this.values[i] = 0;
             }
+            this.head = 0;
+            this.size = 0;
+            this.total = 0;
         }
 
-        private void add(long tick, int delta) {
-            int slot = Math.floorMod((int) tick, RATE_WINDOW_TICKS);
-            if (this.ticks[slot] != tick) {
-                this.ticks[slot] = tick;
-                this.values[slot] = 0;
+        private void add(int delta) {
+            long now = System.nanoTime();
+            this.discardExpired(now);
+            if (this.size >= MAX_EVENTS) {
+                this.discardOldest();
             }
-            this.values[slot] += delta;
+            int index = (this.head + this.size) % MAX_EVENTS;
+            this.timestamps[index] = now;
+            this.values[index] = delta;
+            this.size++;
+            this.total += delta;
         }
 
-        private double sumRecent(long now) {
-            int total = 0;
-            for (int i = 0; i < RATE_WINDOW_TICKS; i++) {
-                if (this.ticks[i] != Long.MIN_VALUE && now - this.ticks[i] < RATE_WINDOW_TICKS) {
-                    total += this.values[i];
+        private double sumRecent() {
+            this.discardExpired(System.nanoTime());
+            return this.total;
+        }
+
+        private void discardExpired(long now) {
+            while (this.size > 0) {
+                long timestamp = this.timestamps[this.head];
+                if (now - timestamp < RATE_WINDOW_NANOS) {
+                    break;
                 }
+                this.discardOldest();
             }
-            return total;
+        }
+
+        private void discardOldest() {
+            if (this.size <= 0) {
+                return;
+            }
+            this.total -= this.values[this.head];
+            this.timestamps[this.head] = 0L;
+            this.values[this.head] = 0;
+            this.head = (this.head + 1) % MAX_EVENTS;
+            this.size--;
         }
     }
 }

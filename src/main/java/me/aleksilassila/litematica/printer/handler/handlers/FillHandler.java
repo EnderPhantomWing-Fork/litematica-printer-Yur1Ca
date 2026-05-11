@@ -135,6 +135,7 @@ public class FillHandler extends ClientPlayerTickHandler {
                         .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
             }
             ActionManager.INSTANCE.setLook(action.getPlayerLook());
+            HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
             HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);
             if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook){
                 HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "等待转头");

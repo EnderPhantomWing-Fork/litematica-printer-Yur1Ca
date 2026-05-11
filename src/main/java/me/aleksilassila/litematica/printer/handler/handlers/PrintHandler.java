@@ -124,6 +124,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
             ActionManager.INSTANCE.useProtocol = true;
         }
         ActionManager.INSTANCE.setLook(action.getPlayerLook());
+        HudStatsManager.INSTANCE.trackExpectedBlockState(HudStatsManager.Mode.PRINT, blockPos, ctx.requiredState);
         HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
         if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");

@@ -97,6 +97,7 @@ public class FluidHandler extends ClientPlayerTickHandler {
                 return;
             }
             new Action().queueAction(blockPos, Direction.UP, false, player);
+            HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, level.getBlockState(blockPos));
             HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
             if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
                 HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");

@@ -348,7 +348,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ConfigInteger BREAK_BLOCKS_PER_TICK = integer("breakBlocksPerTick")
                 .defaultValue(20)
-                .range(0, 256)
+                .range(0, 20)
                 .build();
 
         public static final ConfigInteger BREAK_COOLDOWN = integer("breakCooldown")
@@ -399,8 +399,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
     public static class Bedrock {
         public static final ConfigInteger BEDROCK_INTERVAL = integer("bedrockInterval")
-                .defaultValue(0)
-                .range(0, 20)
+                .defaultValue(2)
+                .range(1, 20)
                 .build();
 
         public static final ConfigInteger BEDROCK_BLOCKS_PER_TICK = integer("bedrockBlocksPerTick")
