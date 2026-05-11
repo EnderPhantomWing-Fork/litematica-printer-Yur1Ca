@@ -100,7 +100,7 @@ public class Render2DUtils {
 
     public static void pushPose() {
         ensureInitialized();
-        //#if MC >= 12111
+        //#if MC >= 12106
         guiGraphics.pose().pushMatrix();
         //#elseif MC > 11904
         //$$ guiGraphics.pose().pushPose();
@@ -111,7 +111,7 @@ public class Render2DUtils {
 
     public static void popPose() {
         ensureInitialized();
-        //#if MC >= 12111
+        //#if MC >= 12106
         guiGraphics.pose().popMatrix();
         //#elseif MC > 11904
         //$$ guiGraphics.pose().popPose();
@@ -122,7 +122,7 @@ public class Render2DUtils {
 
     public static void translate(double x, double y, double z) {
         ensureInitialized();
-        //#if MC >= 12111
+        //#if MC >= 12106
         guiGraphics.pose().translate((float) x, (float) y);
         //#elseif MC > 11904
         //$$ guiGraphics.pose().translate((float) x, (float) y, (float) z);
@@ -133,7 +133,7 @@ public class Render2DUtils {
 
     public static void scale(float x, float y, float z) {
         ensureInitialized();
-        //#if MC >= 12111
+        //#if MC >= 12106
         guiGraphics.pose().scale(x, y);
         //#elseif MC > 11904
         //$$ guiGraphics.pose().scale(x, y, z);
