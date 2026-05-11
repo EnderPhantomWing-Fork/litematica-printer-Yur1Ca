@@ -184,10 +184,6 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                     } else {
                         gui = new GuiBlockInfo(level, null, pos);
                     }
-                    // 仅调试时候加入队列, 避免队列储存无用位置信息
-                    if (Configs.Core.DEBUG_OUTPUT.getBooleanValue()) {
-                        this.addGuiBlockInfoToQueue(gui);
-                    }
                     if (this.canReachIterationPosition(pos)) {
                         gui.interacted = true;
                     } else {

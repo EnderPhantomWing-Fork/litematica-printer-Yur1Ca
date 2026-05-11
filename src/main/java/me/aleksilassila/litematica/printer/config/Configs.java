@@ -202,11 +202,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
-        // 核心 - 调试输出
-        public static final ConfigBoolean DEBUG_OUTPUT = bool("debugOutput")
-                .defaultValue(false)
-                .build();
-
         // 远程交互 - 开关
         public static final ConfigBoolean CLOUD_INVENTORY = bool("cloudInventory")
                 .defaultValue(false)
@@ -255,7 +250,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 Z_REVERSE,
                 AUTO_DISABLE_PRINTER,
                 UPDATE_CHECK,
-                DEBUG_OUTPUT,
                 CLOUD_INVENTORY,
                 AUTO_INVENTORY,
                 INVENTORY_LIST,
