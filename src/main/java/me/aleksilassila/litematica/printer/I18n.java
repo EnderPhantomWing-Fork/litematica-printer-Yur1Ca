@@ -42,6 +42,10 @@ public class I18n {
     // 库存/同步相关提示
     public static final I18n INVENTORY_ADD_COMPLETE = of("message.inventory.add_complete");
     public static final I18n INVENTORY_ADDING = of("message.inventory.adding");
+    public static final I18n INVENTORY_ADD_STARTED = of("message.inventory.add_started");
+    public static final I18n INVENTORY_ADD_EMPTY = of("message.inventory.add_empty");
+    public static final I18n INVENTORY_SELECTION_REQUIRED = of("message.inventory.selection_required");
+    public static final I18n INVENTORY_REMOTE_DISABLED = of("message.inventory.remote_disabled");
     public static final I18n INVENTORY_CONTAINER_CANNOT_OPEN = of("message.inventory.container_cannot_open");
     public static final I18n INVENTORY_NOT_CONTAINER = of("message.inventory.not_container");
     public static final I18n INVENTORY_SYNC_CANCELLED = of("message.inventory.sync_cancelled");

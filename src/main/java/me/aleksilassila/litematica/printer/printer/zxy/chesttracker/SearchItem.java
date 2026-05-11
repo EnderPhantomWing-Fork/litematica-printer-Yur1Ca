@@ -107,12 +107,14 @@ public class SearchItem {
                 !CommonKeys.ENDER_CHEST_KEY.equals(key)) {
             SearchRequest searchRequest = new SearchRequest();
             SearchRequestPopulator.addItemStack(searchRequest, itemStack, SearchRequestPopulator.Context.FAVOURITE);
-            int range = memoryBank.getMetadata().getSearchSettings().searchRange;
+            int range = isPrinterMemory
+                    ? Integer.MAX_VALUE
+                    : memoryBank.getMetadata().getSearchSettings().searchRange;
             double rangeSquared = range == Integer.MAX_VALUE ? -1 : (double) range * range;
 
             Map<BlockPos,Memory> itemsMap = new LinkedHashMap<>();
             for (Map.Entry<BlockPos, Memory> entry : memoryBank.getMemories().get(key).getMemories().entrySet()) {
-                if (rangeSquared == -1 || entry.getKey().distToCenterSqr(player.trackingPosition()) > rangeSquared) continue;
+                if (rangeSquared != -1 && entry.getKey().distToCenterSqr(player.trackingPosition()) > rangeSquared) continue;
                 if (entry.getValue().items().stream()
                         .filter(item -> SearchRequest.check(item, searchRequest))
                         .anyMatch(item -> !isPrinterMemory || !((Block.byItem(item.getItem())) instanceof ShulkerBoxBlock))) {

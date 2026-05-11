@@ -63,16 +63,38 @@ public class ZxyUtils {
 
     public static void startAddPrinterInventory() {
         getReadyColor();
-        if (Configs.Core.CLOUD_INVENTORY.getBooleanValue() && !printerMemoryAdding) {
-            printerMemoryAdding = true;
-            //#if MC > 12001
-            if (MemoryUtils.PRINTER_MEMORY == null) MemoryUtils.createPrinterMemory();
-            //#endif
-            for (String string : Configs.Core.INVENTORY_LIST.getStrings()) {
-                invBlockList.addAll(filterBlocksByName(string).stream().filter(InventoryUtils::canOpenInv).toList());
-            }
-            highlightPosList.addAll(invBlockList);
+        if (!Configs.Core.CLOUD_INVENTORY.getBooleanValue()) {
+            MessageUtils.setOverlayMessage(I18n.INVENTORY_REMOTE_DISABLED.getName(), false);
+            return;
         }
+        if (printerMemoryAdding) {
+            return;
+        }
+        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
+        if (selection == null || selection.getAllSubRegionBoxes().isEmpty()) {
+            MessageUtils.setOverlayMessage(I18n.INVENTORY_SELECTION_REQUIRED.getName(), false);
+            return;
+        }
+        printerMemoryAdding = true;
+        invBlockList.clear();
+        //#if MC > 12001
+        if (MemoryUtils.PRINTER_MEMORY == null) MemoryUtils.createPrinterMemory();
+        //#endif
+        LinkedHashSet<BlockPos> matched = new LinkedHashSet<>();
+        int rawMatches = 0;
+        for (String string : Configs.Core.INVENTORY_LIST.getStrings()) {
+            List<BlockPos> hits = filterBlocksByName(string);
+            rawMatches += hits.size();
+            hits.stream().filter(InventoryUtils::canOpenInv).forEach(matched::add);
+        }
+        invBlockList.addAll(matched);
+        highlightPosList.addAll(invBlockList);
+        if (invBlockList.isEmpty()) {
+            printerMemoryAdding = false;
+            MessageUtils.setOverlayMessage(I18n.INVENTORY_ADD_EMPTY.getName(), false);
+            return;
+        }
+        MessageUtils.setOverlayMessage(I18n.INVENTORY_ADD_STARTED.getName(invBlockList.size()), false);
     }
 
     public static void addInv() {
@@ -83,17 +105,17 @@ public class ZxyUtils {
                 return;
             }
             MessageUtils.setOverlayMessage(I18n.INVENTORY_ADDING.getName(), false);
-            for (BlockPos pos : invBlockList) {
-                if (client.level != null) {
-                    //#if MC < 12001
-                    //$$ MemoryUtils.setLatestPos(pos);
-                    //#endif
-                    ModLoadUtils.closeScreen++;
-                    OpenInventoryPacket.sendOpenInventory(pos, client.level.dimension());
-                }
-                invBlockList.remove(pos);
-                highlightPosList.remove(pos);
-                break;
+            BlockPos pos = invBlockList.pollFirst();
+            if (pos == null) {
+                return;
+            }
+            highlightPosList.remove(pos);
+            if (client.level != null) {
+                //#if MC < 12001
+                //$$ MemoryUtils.setLatestPos(pos);
+                //#endif
+                ModLoadUtils.closeScreen++;
+                OpenInventoryPacket.sendOpenInventory(pos, client.level.dimension());
             }
         }
     }

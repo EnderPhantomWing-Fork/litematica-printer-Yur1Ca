@@ -113,11 +113,9 @@ public class MemoryUtils {
             if(printerMetadata != null){
                 PRINTER_MEMORY.setMetadata(printerMetadata);
             }
-//            Metadata metadata = PRINTER_MEMORY.getMetadata();
-//            SearchSettings searchSettings = metadata.getSearchSettings();
-//            searchSettings.searchRange = Integer.MAX_VALUE;
-//            searchSettings.itemListRange = Integer.MAX_VALUE;
-//            metadata.getIntegritySettings().memoryLifetime = NEVER;
+            Metadata metadata = PRINTER_MEMORY.getMetadata();
+            metadata.getSearchSettings().searchRange = Integer.MAX_VALUE;
+            metadata.getSearchSettings().itemListRange = Integer.MAX_VALUE;
             save();
         }
     }
