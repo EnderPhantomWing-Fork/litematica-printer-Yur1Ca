@@ -6,11 +6,6 @@ on:
         type: boolean
         required: false
         default: false
-      target_subproject:
-        description: see release.yml, leave it empty to build all
-        type: string
-        required: false
-        default: ''
 
 env:
   IS_THIS_RELEASE: ${{ inputs.release }}
@@ -21,6 +16,9 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, 'SKIP') }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
 
       - name: Setup Java 17
         id: setup_java_17
@@ -57,15 +55,18 @@ jobs:
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build fabricWrapper subproject
-        run: ./gradlew :fabricWrapper:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+      - name: Build 1.21.11
+        run: ./gradlew :1.21.11:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
 
-      - name: Full compile verification
-        run: ./gradlew build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+      - name: Build 26.1
+        run: ./gradlew :26.1:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
 
       - name: Capture build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Artifacts
-          path: fabricWrapper/build/libs/*.jar
+          path: |
+            versions/1.21.11/build/libs/*.jar
+            versions/26.1/build/libs/*.jar
+          if-no-files-found: error
           retention-days: 1
