@@ -52,7 +52,8 @@
     "printer.mc.MixinClientPacketListener",
     "printer.mc.MixinGui",
     "printer.mc.MixinLocalPlayer",
-    "printer.mc.MixinMultiPlayerGameMode"
+    "printer.mc.MixinMultiPlayerGameMode",
+    "printer.tweakeroo.MixinInputHandler"
   ],
   "injectors": {
     "defaultRequire": 1
