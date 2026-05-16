@@ -11,9 +11,9 @@ on:
         description: Version set to release
         type: choice
         required: true
-        default: maintained
+        default: lts
         options:
-          - maintained
+          - lts
           - archive
           - all
 

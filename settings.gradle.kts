@@ -28,6 +28,7 @@ val versions = listOf(
     "1.21.1", "1.21.3", "1.21.4", "1.21.5", "1.21.6", "1.21.9", /*"1.21.10",*/ "1.21.11",
     "26.1"
 )
+val mainProjectVersion = file("versions/mainProject").readText().trim()
 
 val requestedVersions = System.getenv("TARGET_MC_VERSIONS")
     ?.split(",")
@@ -42,7 +43,11 @@ val selectedVersions = when {
         require(unknownVersions.isEmpty()) {
             "Unknown TARGET_MC_VERSIONS entries: ${unknownVersions.joinToString(", ")}"
         }
-        requestedVersions
+        if (mainProjectVersion in requestedVersions) {
+            requestedVersions
+        } else {
+            requestedVersions + mainProjectVersion
+        }
     }
 }
 
