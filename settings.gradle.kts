@@ -29,7 +29,24 @@ val versions = listOf(
     "26.1"
 )
 
-for (version in versions) {
+val requestedVersions = System.getenv("TARGET_MC_VERSIONS")
+    ?.split(",")
+    ?.map { it.trim() }
+    ?.filter { it.isNotEmpty() }
+    ?.distinct()
+
+val selectedVersions = when {
+    requestedVersions.isNullOrEmpty() -> versions
+    else -> {
+        val unknownVersions = requestedVersions - versions.toSet()
+        require(unknownVersions.isEmpty()) {
+            "Unknown TARGET_MC_VERSIONS entries: ${unknownVersions.joinToString(", ")}"
+        }
+        requestedVersions
+    }
+}
+
+for (version in selectedVersions) {
     include(":$version")
     project(":$version").apply {
         projectDir = file("versions/$version")

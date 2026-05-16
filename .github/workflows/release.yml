@@ -81,6 +81,8 @@ jobs:
 
       - name: Build ${{ inputs.target_version }}
         run: ./gradlew :${{ inputs.target_version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+        env:
+          TARGET_MC_VERSIONS: ${{ inputs.target_version }}
 
       - name: Upload jars to GitHub Release
         uses: softprops/action-gh-release@v2

@@ -71,6 +71,8 @@ jobs:
 
       - name: Build ${{ matrix.version }}
         run: ./gradlew :${{ matrix.version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+        env:
+          TARGET_MC_VERSIONS: ${{ matrix.version }}
 
       - name: Capture build artifacts
         uses: actions/upload-artifact@v7
