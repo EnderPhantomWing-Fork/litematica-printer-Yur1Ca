@@ -29,6 +29,32 @@ val versions = listOf(
     "26.1"
 )
 val mainProjectVersion = file("versions/mainProject").readText().trim()
+val preprocessParentChain = mapOf(
+    "1.18.2" to "1.19.4",
+    "1.19.4" to "1.20.1",
+    "1.20.1" to "1.20.2",
+    "1.20.2" to "1.20.4",
+    "1.20.4" to "1.20.6",
+    "1.20.6" to "1.21.1",
+    "1.21.1" to "1.21.3",
+    "1.21.3" to "1.21.4",
+    "1.21.4" to "1.21.5",
+    "1.21.5" to "1.21.6",
+    "1.21.6" to "1.21.9",
+    "1.21.9" to "1.21.11",
+    "1.21.11" to "26.1"
+)
+
+fun expandWithPreprocessParents(requested: List<String>): List<String> {
+    val expanded = linkedSetOf<String>()
+    requested.forEach { version ->
+        var current: String? = version
+        while (current != null && expanded.add(current)) {
+            current = preprocessParentChain[current]
+        }
+    }
+    return expanded.toList()
+}
 
 val requestedVersions = System.getenv("TARGET_MC_VERSIONS")
     ?.split(",")
@@ -43,10 +69,8 @@ val selectedVersions = when {
         require(unknownVersions.isEmpty()) {
             "Unknown TARGET_MC_VERSIONS entries: ${unknownVersions.joinToString(", ")}"
         }
-        if (mainProjectVersion in requestedVersions) {
-            requestedVersions
-        } else {
-            requestedVersions + mainProjectVersion
+        expandWithPreprocessParents(requestedVersions).let { expanded ->
+            if (mainProjectVersion in expanded) expanded else expanded + mainProjectVersion
         }
     }
 }
