@@ -15,7 +15,7 @@ val time = SimpleDateFormat("yyMMdd")
     .format(Date())
     .toString()
 
-version = fullProjectVersion
+version = artifactVersion
 group = modMavenGroup
 
 repositories {
@@ -47,6 +47,10 @@ repositories {
 configurations.all {
     resolutionStrategy {
         force("net.fabricmc:fabric-loader:$fabricLoaderVersion")
+        force("maven.modrinth:malilib:${prop("malilib")}")
+        force("maven.modrinth:litematica:${prop("litematica")}")
+        force("maven.modrinth:tweakeroo:${prop("tweakeroo")}")
+        force("maven.modrinth:modmenu:${prop("modmenu")}")
     }
 }
 
@@ -58,7 +62,7 @@ dependencies {
 
     implementation("com.belerweb:pinyin4j:${prop("pinyin_version")}")?.let { include(it) }
 
-    implementation("com.terraformersmc:modmenu:${prop("modmenu")}")
+    implementation("maven.modrinth:modmenu:${prop("modmenu")}")
 
     // masa
     implementation("maven.modrinth:malilib:$malilib")

@@ -62,6 +62,20 @@ val Project.fullProjectVersion: String get() {
     }
 }
 
+private val Project.modVersionFlavorSuffix: String
+    get() = modVersion.substringAfter('-', "").let { if (it.isEmpty()) "" else "-$it" }
+
+val Project.artifactVersion: String get() {
+    val buildNumber = githubRunNumber
+    val baseVersion = mcVersion ?: modVersion.substringBefore('-')
+    val flavorSuffix = modVersionFlavorSuffix
+    return when {
+        buildNumber != null && isReleaseWorkflow -> "$baseVersion$flavorSuffix-beta$buildNumber"
+        buildNumber != null -> "$baseVersion$flavorSuffix-dev$buildNumber"
+        else -> "$baseVersion$flavorSuffix-local"
+    }
+}
+
 val Project.placeholderProps: Map<String, Any?>
     get() = mapOf(
         "mod_id" to modId,

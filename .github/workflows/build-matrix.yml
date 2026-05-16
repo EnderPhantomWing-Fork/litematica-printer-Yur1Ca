@@ -1,10 +1,17 @@
-name: build
+name: build-matrix
 
 on:
-  push:
-    paths-ignore: ['*.md']
-  pull_request:
   workflow_dispatch:
+    inputs:
+      version_set:
+        description: Version set to build
+        type: choice
+        required: true
+        default: maintained
+        options:
+          - maintained
+          - archive
+          - all
 
 env:
   IS_THIS_RELEASE: false
@@ -18,8 +25,16 @@ jobs:
     steps:
       - id: targets
         shell: bash
+        env:
+          VERSION_SET: ${{ inputs.version_set }}
         run: |
-          echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4"]' >> "$GITHUB_OUTPUT"
+          if [ "$VERSION_SET" = "archive" ]; then
+            echo 'targets=["1.21.3","1.21.1","1.20.6","1.20.4","1.20.2","1.20.1","1.19.4","1.18.2"]' >> "$GITHUB_OUTPUT"
+          elif [ "$VERSION_SET" = "all" ]; then
+            echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4","1.21.3","1.21.1","1.20.6","1.20.4","1.20.2","1.20.1","1.19.4","1.18.2"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4"]' >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     needs: plan
@@ -77,4 +92,4 @@ jobs:
         with:
           name: build-${{ matrix.version }}
           path: versions/${{ matrix.version }}/build/libs/*.jar
-          retention-days: 1
+          retention-days: 7

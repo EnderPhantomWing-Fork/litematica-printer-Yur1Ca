@@ -11,7 +11,7 @@ plugins {
     id("com.replaymod.preprocess")
 }
 
-version = fullProjectVersion
+version = artifactVersion
 group = modMavenGroup
 
 repositories {
@@ -58,7 +58,7 @@ configurations.all {
         force("maven.modrinth:malilib:${prop("malilib")}")
         force("maven.modrinth:litematica:${prop("litematica")}")
         force("maven.modrinth:tweakeroo:${prop("tweakeroo")}")
-        force("com.terraformersmc:modmenu:${prop("modmenu")}")
+        force("maven.modrinth:modmenu:${prop("modmenu")}")
     }
 }
 
@@ -69,7 +69,7 @@ dependencies {
     modImplementation("net.fabricmc.fabric-api:fabric-api:$fabricApiVersion")
     modImplementation("com.belerweb:pinyin4j:${prop("pinyin_version")}")?.let { include(it) }
 
-    modImplementation("com.terraformersmc:modmenu:${prop("modmenu")}")
+    modImplementation("maven.modrinth:modmenu:${prop("modmenu")}")
 
     // modImplementation("com.github.sakura-ryoko:malilib:${props["malilib"]}")
     // modImplementation("com.github.sakura-ryoko:litematica:${props["litematica"]}")

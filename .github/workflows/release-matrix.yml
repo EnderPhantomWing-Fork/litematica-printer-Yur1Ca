@@ -1,14 +1,27 @@
-name: build
+name: release-version-set
 
 on:
-  push:
-    paths-ignore: ['*.md']
-  pull_request:
   workflow_dispatch:
+    inputs:
+      target_release_tag:
+        description: Existing or new GitHub release tag
+        type: string
+        required: true
+      version_set:
+        description: Version set to release
+        type: choice
+        required: true
+        default: maintained
+        options:
+          - maintained
+          - archive
+          - all
 
 env:
-  IS_THIS_RELEASE: false
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
 
 jobs:
   plan:
@@ -18,8 +31,16 @@ jobs:
     steps:
       - id: targets
         shell: bash
+        env:
+          VERSION_SET: ${{ inputs.version_set }}
         run: |
-          echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4"]' >> "$GITHUB_OUTPUT"
+          if [ "$VERSION_SET" = "archive" ]; then
+            echo 'targets=["1.21.3","1.21.1","1.20.6","1.20.4","1.20.2","1.20.1","1.19.4","1.18.2"]' >> "$GITHUB_OUTPUT"
+          elif [ "$VERSION_SET" = "all" ]; then
+            echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4","1.21.3","1.21.1","1.20.6","1.20.4","1.20.2","1.20.1","1.19.4","1.18.2"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4"]' >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     needs: plan
@@ -71,10 +92,29 @@ jobs:
 
       - name: Build ${{ matrix.version }}
         run: ./gradlew :${{ matrix.version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+        env:
+          IS_THIS_RELEASE: true
 
       - name: Capture build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.version }}
           path: versions/${{ matrix.version }}/build/libs/*.jar
-          retention-days: 1
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-artifacts
+
+      - name: Upload jars to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.target_release_tag }}
+          files: release-artifacts/**/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
