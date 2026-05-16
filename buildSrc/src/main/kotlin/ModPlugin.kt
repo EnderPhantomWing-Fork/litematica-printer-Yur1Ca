@@ -2,6 +2,7 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.JavaVersion
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.compile.JavaCompile
@@ -15,11 +16,18 @@ abstract class ModPlugin : Plugin<Project> {
     override fun apply(project: Project) = with(project) {
         pluginManager.apply("java")
 
+        configureArchives()
         configureJava()
         configureLombok()
         configureJavaCompile()
         configureResources()
         configureJar()
+    }
+
+    private fun Project.configureArchives() {
+        extensions.configure<BasePluginExtension> {
+            archivesName.set(modArchivesBaseName)
+        }
     }
 
     private fun Project.configureJava() {
