@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
+import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
@@ -30,7 +31,7 @@ public final class BedrockPlacer {
     private static float lastHeadYawOld;
     private static float lastBodyYaw;
     private static float lastBodyYawOld;
-    private static final Map<BlockPos, Direction> pendingHorizontalPistonPlacements = new HashMap<>();
+    private static final Map<BlockPos, PendingHorizontalPlacement> pendingHorizontalPistonPlacements = new HashMap<>();
 
     private BedrockPlacer() {
     }
@@ -166,22 +167,40 @@ public final class BedrockPlacer {
             return false;
         }
 
-        Direction pendingFacing = pendingHorizontalPistonPlacements.get(pendingKey);
-        if (facing == pendingFacing) {
+        PendingHorizontalPlacement pendingPlacement = pendingHorizontalPistonPlacements.get(pendingKey);
+        if (pendingPlacement != null && facing == pendingPlacement.facing()) {
+            if (!isHorizontalLookReady(pendingPlacement)) {
+                return true;
+            }
             if (consumeReadyPlacement) {
                 pendingHorizontalPistonPlacements.remove(pendingKey);
             }
             return false;
         }
 
-        pendingHorizontalPistonPlacements.put(pendingKey, facing);
+        long sentTick = ClientPlayerTickManager.getCurrentHandlerTime();
+        int packetEpoch = ClientPlayerTickManager.getPacketEpoch();
+        pendingHorizontalPistonPlacements.put(pendingKey, new PendingHorizontalPlacement(facing, sentTick, packetEpoch));
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("preparePistonLook deferred piston=" + BedrockDebugLog.pos(pistonPos)
                     + " facing=" + facing
-                    + " reason=horizontal_look_settle");
+                    + " reason=horizontal_look_settle"
+                    + " sentTick=" + sentTick
+                    + " packetEpoch=" + packetEpoch);
         }
         return true;
+    }
+
+    private static boolean isHorizontalLookReady(PendingHorizontalPlacement pendingPlacement) {
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        if (now <= pendingPlacement.sentTick()) {
+            return false;
+        }
+        if (ClientPlayerTickManager.getPacketEpoch() > pendingPlacement.packetEpoch()) {
+            return true;
+        }
+        return now - pendingPlacement.sentTick() >= 2L;
     }
 
     private static void applyPlacementLook(LocalPlayer player, PlayerLook look) {
@@ -224,5 +243,8 @@ public final class BedrockPlacer {
         // Keep the server on the placement look until its use-item packet has been
         // processed; restoring the server-side look immediately can race horizontal
         // piston placement and make the piston pick the player's real camera yaw.
+    }
+
+    private record PendingHorizontalPlacement(Direction facing, long sentTick, int packetEpoch) {
     }
 }

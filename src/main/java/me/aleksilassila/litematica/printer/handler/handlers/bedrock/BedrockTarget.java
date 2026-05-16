@@ -60,9 +60,13 @@ public class BedrockTarget {
     public final Set<BlockPos> tempBlocks = new LinkedHashSet<>();
 
     public BedrockTarget(BlockPos bedrockPos, ClientLevel level) {
+        this(bedrockPos, level, null, null, null);
+    }
+
+    public BedrockTarget(BlockPos bedrockPos, ClientLevel level, BedrockMachineLayout precomputedLayout, BedrockTorchPlacement precomputedPlacement, BlockPos precomputedSlimePos) {
         this.bedrockPos = bedrockPos;
         this.level = level;
-        this.layout = BedrockMachineLayout.find(level, bedrockPos);
+        this.layout = precomputedLayout != null ? precomputedLayout : BedrockMachineLayout.find(level, bedrockPos);
         if (this.layout == null) {
             this.pistonPos = bedrockPos.above();
             this.headPos = this.pistonPos.above();
@@ -76,7 +80,10 @@ public class BedrockTarget {
         this.pistonPos = this.layout.getPistonPos();
         this.headPos = this.layout.getHeadPos();
         this.conservativeSync = BedrockTargetBlocks.requiresConservativeSync(level.getBlockState(bedrockPos));
-        this.torchPlacement = BedrockEnvironment.findTorchPlacement(level, this.pistonPos, this.layout.getPistonOffset().getOpposite(), this.bedrockPos, this.pistonPos, this.headPos);
+        this.torchPlacement = precomputedPlacement != null
+                ? precomputedPlacement
+                : BedrockEnvironment.findTorchPlacement(level, this.pistonPos, this.layout.getPistonOffset().getOpposite(), this.bedrockPos, this.pistonPos, this.headPos);
+        this.slimePos = resolveInitialSlimeSupport(precomputedPlacement, precomputedSlimePos);
         this.torchSupportPos = getTorchSupportFromPlacement();
         if (this.conservativeSync) {
             if (BedrockDebugLog.isEnabled()) {
@@ -513,6 +520,18 @@ public class BedrockTarget {
         if (pos != null) {
             this.tempBlocks.add(pos);
         }
+    }
+
+    private BlockPos resolveInitialSlimeSupport(BedrockTorchPlacement placement, BlockPos precomputedSlimePos) {
+        if (precomputedSlimePos != null) {
+            return precomputedSlimePos;
+        }
+        if (placement == null || placement.getSupportPos() == null) {
+            return null;
+        }
+        return this.level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)
+                ? placement.getSupportPos()
+                : null;
     }
 
     private boolean isPowerReservationPosition(BlockPos pos) {

@@ -63,6 +63,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        BedrockController.clearSubmissionPlans();
         if (playerInteractionBox == null || this.level == null || this.player == null) {
             return List.of();
         }
@@ -90,6 +91,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         if (candidates.size() <= 1) {
             List<BlockPos> single = new ArrayList<>(candidates.size());
             for (CandidateInfo candidate : candidates) {
+                BedrockController.primeSubmissionPlan(candidate.pos(), candidate.layout(), candidate.placement(), candidate.slimePos());
                 single.add(candidate.pos());
             }
             return single;
@@ -104,6 +106,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         logIsolatedCandidateSelection(candidates, selectedCandidates, limit);
         List<BlockPos> filtered = new ArrayList<>(selectedCandidates.size());
         for (CandidateInfo candidate : selectedCandidates) {
+            BedrockController.primeSubmissionPlan(candidate.pos(), candidate.layout(), candidate.placement(), candidate.slimePos());
             filtered.add(candidate.pos());
         }
         return filtered;
@@ -166,17 +169,20 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     private CandidateInfo buildCandidate(BlockPos pos) {
         if (this.level == null) {
-            return new CandidateInfo(pos, null, null, List.of(), List.of(), Integer.MAX_VALUE, Integer.MAX_VALUE);
+            return new CandidateInfo(pos, null, null, null, List.of(), List.of(), Integer.MAX_VALUE, Integer.MAX_VALUE);
         }
 
         BedrockMachineLayout layout = BedrockMachineLayout.find(this.level, pos);
-        BedrockTorchPlacement placement = layout == null ? null : findPlacement(layout, pos);
+        PlacementSelection placementSelection = layout == null ? null : findPlacementSelection(layout, pos);
+        BedrockTorchPlacement placement = placementSelection == null ? null : placementSelection.placement();
+        BlockPos slimePos = placementSelection == null ? null : placementSelection.slimePos();
         int priority = candidatePriority(pos, layout, placement);
         int neighborTargetCount = neighborTargetCount(pos);
         return new CandidateInfo(
                 pos,
                 layout,
                 placement,
+                slimePos,
                 buildStructuralPositions(pos, layout),
                 buildPowerReservationPositions(placement),
                 priority,
@@ -357,7 +363,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         return positions;
     }
 
-    private BedrockTorchPlacement findPlacement(BedrockMachineLayout layout, BlockPos bedrockPos) {
+    private PlacementSelection findPlacementSelection(BedrockMachineLayout layout, BlockPos bedrockPos) {
         if (this.level == null || layout == null) {
             return null;
         }
@@ -370,9 +376,11 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 layout.getHeadPos()
         );
         if (placement != null) {
-            return placement;
+            return new PlacementSelection(placement, this.level.getBlockState(placement.getSupportPos()).is(Blocks.SLIME_BLOCK)
+                    ? placement.getSupportPos()
+                    : null);
         }
-        return BedrockEnvironment.findPossibleSlimeTorchPlacement(
+        placement = BedrockEnvironment.findPossibleSlimeTorchPlacement(
                 this.level,
                 layout.getPistonPos(),
                 layout.getPistonOffset().getOpposite(),
@@ -380,6 +388,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 layout.getPistonPos(),
                 layout.getHeadPos()
         );
+        return placement == null ? null : new PlacementSelection(placement, placement.getSupportPos());
     }
 
     private int neighborTargetCount(BlockPos pos) {
@@ -415,11 +424,15 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             BlockPos pos,
             BedrockMachineLayout layout,
             BedrockTorchPlacement placement,
+            BlockPos slimePos,
             List<BlockPos> structuralPositions,
             List<BlockPos> powerReservationPositions,
             int priority,
             int neighborTargetCount
     ) {
+    }
+
+    private record PlacementSelection(BedrockTorchPlacement placement, BlockPos slimePos) {
     }
 
 }

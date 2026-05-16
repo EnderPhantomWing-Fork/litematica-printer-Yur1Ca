@@ -27,6 +27,8 @@ public class ClientPlayerTickManager {
     @Getter
     @Setter
     private static int packetTick;
+    @Getter
+    private static int packetEpoch;
     private static String lastPauseReason;
 
     public static final ImmutableList<ClientPlayerTickHandler> VALUES = ImmutableList.of(
@@ -80,6 +82,11 @@ public class ClientPlayerTickManager {
 
     public static long getCurrentHandlerTime() {
         return ((MinecraftAccessor) Minecraft.getInstance()).getClientTickCount();
+    }
+
+    public static void recordInboundPacket() {
+        packetTick = 0;
+        packetEpoch++;
     }
 
     public static String getLastPauseReason() {

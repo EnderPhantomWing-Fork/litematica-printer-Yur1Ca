@@ -22,7 +22,7 @@ public class MixinConnection {
     @Inject(method = "genericsFtw", at = @At("HEAD"), require = 1)
     private static void hookGenericsFtw(Packet<?> packet, PacketListener listener, CallbackInfo ci) {
         if (ConfigUtils.isEnable()) {
-            ClientPlayerTickManager.setPacketTick(0);   // 用于延迟检测
+            ClientPlayerTickManager.recordInboundPacket();   // 用于延迟检测与服务端回包近似确认
         }
     }
 

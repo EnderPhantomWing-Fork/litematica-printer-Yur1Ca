@@ -36,6 +36,8 @@ public final class BedrockController {
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
     private static final int ACCEPT_BACKPRESSURE_TICKS = 1;
+    private static final int MAX_ACTIVE_TARGETS = 3;
+    private static final int MAX_SUBMITS_PER_TICK = 2;
     private static final int HOTSPOT_SKIP_PENALTY = 120;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
@@ -43,6 +45,7 @@ public final class BedrockController {
     private static final Set<BlockPos> BLOCKED_CLEANUP_POSITIONS = new LinkedHashSet<>();
     private static final Map<BlockPos, Integer> EXPOSURE_DEFERRALS = new HashMap<>();
     private static final Map<BlockPos, Integer> EXPOSURE_BYPASS_USES = new HashMap<>();
+    private static final Map<BlockPos, SubmissionPlan> SUBMISSION_PLANS = new HashMap<>();
     private static long nextAcceptTick = 0L;
     private static long nextExecuteTick = 0L;
     private static long lastProcessedTick = Long.MIN_VALUE;
@@ -72,6 +75,7 @@ public final class BedrockController {
         BLOCKED_CLEANUP_POSITIONS.clear();
         EXPOSURE_DEFERRALS.clear();
         EXPOSURE_BYPASS_USES.clear();
+        SUBMISSION_PLANS.clear();
         nextAcceptTick = 0L;
         nextExecuteTick = 0L;
         lastProcessedTick = Long.MIN_VALUE;
@@ -244,7 +248,10 @@ public final class BedrockController {
         if (!canAccept(stablePos)) {
             return false;
         }
-        BedrockTarget target = new BedrockTarget(stablePos, level);
+        SubmissionPlan submissionPlan = consumeSubmissionPlan(stablePos);
+        BedrockTarget target = submissionPlan != null
+                ? new BedrockTarget(stablePos, level, submissionPlan.layout(), submissionPlan.placement(), submissionPlan.slimePos())
+                : new BedrockTarget(stablePos, level);
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             lastHudReason = "target_failed_on_create";
             setRetryCooldown(stablePos, SUBMIT_RETRY_COOLDOWN_TICKS);
@@ -613,21 +620,23 @@ public final class BedrockController {
     }
 
     private static int getActiveTargetCap() {
-        return getConfiguredThroughput();
+        int throughput = getConfiguredThroughput();
+        return Math.max(1, Math.min(MAX_ACTIVE_TARGETS, (throughput + 2) / 2));
     }
 
     private static int getSubmitCap() {
         int throughput = getConfiguredThroughput();
+        int baseSubmitCap = throughput <= 2 ? 1 : MAX_SUBMITS_PER_TICK;
         if (cleanupPressureThisTick >= getHighCleanupPressureThreshold()) {
-            return Math.min(throughput, 2);
+            return 1;
         }
         if (cleanupPressureThisTick >= getMediumCleanupPressureThreshold()) {
-            return Math.min(throughput, 4);
+            return Math.min(baseSubmitCap, 1);
         }
         if (cleanupPressureThisTick >= getLowCleanupPressureThreshold()) {
-            return Math.min(throughput, Math.max(2, throughput / 2));
+            return Math.min(baseSubmitCap, 1);
         }
-        return throughput;
+        return baseSubmitCap;
     }
 
     private static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
@@ -1098,6 +1107,23 @@ public final class BedrockController {
         return pos == null ? null : pos.immutable();
     }
 
+    public static void clearSubmissionPlans() {
+        SUBMISSION_PLANS.clear();
+    }
+
+    public static void primeSubmissionPlan(BlockPos bedrockPos, BedrockMachineLayout layout, BedrockTorchPlacement placement, BlockPos slimePos) {
+        BlockPos stablePos = stablePos(bedrockPos);
+        if (stablePos == null || layout == null) {
+            return;
+        }
+        SUBMISSION_PLANS.put(stablePos, new SubmissionPlan(
+                layout,
+                placement,
+                slimePos,
+                ClientPlayerTickManager.getCurrentHandlerTime()
+        ));
+    }
+
     private static int getExposureDeferralCount(BlockPos pos) {
         BlockPos stablePos = stablePos(pos);
         if (stablePos == null) {
@@ -1156,6 +1182,26 @@ public final class BedrockController {
         private static AcceptProbe reject(String reason) {
             return new AcceptProbe(false, reason);
         }
+    }
+
+    private static SubmissionPlan consumeSubmissionPlan(BlockPos pos) {
+        if (pos == null) {
+            return null;
+        }
+        SubmissionPlan plan = SUBMISSION_PLANS.remove(pos);
+        if (plan == null) {
+            return null;
+        }
+        long age = ClientPlayerTickManager.getCurrentHandlerTime() - plan.plannedAtTick();
+        return age <= 1L ? plan : null;
+    }
+
+    private record SubmissionPlan(
+            BedrockMachineLayout layout,
+            BedrockTorchPlacement placement,
+            BlockPos slimePos,
+            long plannedAtTick
+    ) {
     }
 
     public static HudSnapshot getHudSnapshot() {
