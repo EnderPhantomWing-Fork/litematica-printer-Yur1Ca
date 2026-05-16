@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -20,6 +21,8 @@ public final class BedrockPlacer {
     private static final Minecraft CLIENT = Minecraft.getInstance();
     private static float lastYaw;
     private static float lastPitch;
+    private static BlockPos pendingHorizontalPistonPos;
+    private static Direction pendingHorizontalPistonFacing;
 
     private BedrockPlacer() {
     }
@@ -40,7 +43,7 @@ public final class BedrockPlacer {
         }
         PlayerLook look = new PlayerLook(clickedFace.getOpposite());
         rememberLook(player);
-        sendLookPacketBypassingActionManager(player, look);
+        NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
         syncLocalLook(player, look.getYaw(), look.getPitch());
         // Use center of the support block for more reliable interaction
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(supportPos), clickedFace, supportPos, false);
@@ -77,10 +80,12 @@ public final class BedrockPlacer {
         // Pistons face opposite to the direction the player is looking when placed.
         // We want the resulting piston facing to match `facing`, so look at the opposite side.
         PlayerLook look = new PlayerLook(facing.getOpposite());
-        // Packet-mode piston placement only needs the server-side look. Touching the
-        // local player rotation here can produce an immediate vanilla look update,
-        // which races horizontal piston placement in some singleplayer environments.
-        sendLookPacketBypassingActionManager(player, look);
+        if (armOrConsumeHorizontalLookDelay(player, pistonPos, facing, look)) {
+            return false;
+        }
+        if (!DirectionUtils.orderedByNearest(look.getYaw(), look.getPitch())[0].getAxis().isHorizontal()) {
+            NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
+        }
 
         BlockPos clickedPos = pistonPos.relative(facing.getOpposite());
         Direction clickedFace = facing;
@@ -131,14 +136,30 @@ public final class BedrockPlacer {
         }
     }
 
-    private static void sendLookPacketBypassingActionManager(LocalPlayer player, PlayerLook look) {
-        PlayerLook queuedLook = ActionManager.INSTANCE.look;
-        try {
-            ActionManager.INSTANCE.look = null;
-            NetworkUtils.sendLookPacket(player, look);
-        } finally {
-            ActionManager.INSTANCE.look = queuedLook;
+    private static boolean armOrConsumeHorizontalLookDelay(LocalPlayer player, BlockPos pistonPos, Direction facing, PlayerLook look) {
+        Direction lookDirection = DirectionUtils.orderedByNearest(look.getYaw(), look.getPitch())[0];
+        if (!lookDirection.getAxis().isHorizontal()) {
+            clearPendingHorizontalPistonPlacement();
+            return false;
         }
+        if (pistonPos.equals(pendingHorizontalPistonPos) && facing == pendingHorizontalPistonFacing) {
+            clearPendingHorizontalPistonPlacement();
+            return false;
+        }
+        pendingHorizontalPistonPos = pistonPos;
+        pendingHorizontalPistonFacing = facing;
+        NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
+        if (BedrockDebugLog.isEnabled()) {
+            BedrockDebugLog.write("placePiston deferred piston=" + BedrockDebugLog.pos(pistonPos)
+                    + " facing=" + facing
+                    + " reason=horizontal_look_settle");
+        }
+        return true;
+    }
+
+    private static void clearPendingHorizontalPistonPlacement() {
+        pendingHorizontalPistonPos = null;
+        pendingHorizontalPistonFacing = null;
     }
 
     private static void rememberLook(LocalPlayer player) {

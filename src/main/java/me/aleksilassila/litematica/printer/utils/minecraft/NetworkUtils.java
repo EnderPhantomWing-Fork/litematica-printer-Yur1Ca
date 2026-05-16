@@ -11,6 +11,7 @@ import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 public class NetworkUtils {
 
     private static final Minecraft client = Minecraft.getInstance();
+    private static final ThreadLocal<Boolean> BYPASS_QUEUED_LOOK_OVERRIDE = ThreadLocal.withInitial(() -> false);
 
     public static void sendPacket(Packet<?> packet) {
         ClientPacketListener connection = client.getConnection();
@@ -40,6 +41,23 @@ public class NetworkUtils {
 
     public static void sendLookPacket(LocalPlayer playerEntity, PlayerLook playerLook) {
         sendLookPacket(playerEntity, playerLook.getYaw(), playerLook.getPitch());
+    }
+
+    public static void sendLookPacketIgnoringQueuedLook(LocalPlayer playerEntity, float lookYaw, float lookPitch) {
+        try {
+            BYPASS_QUEUED_LOOK_OVERRIDE.set(true);
+            sendLookPacket(playerEntity, lookYaw, lookPitch);
+        } finally {
+            BYPASS_QUEUED_LOOK_OVERRIDE.set(false);
+        }
+    }
+
+    public static void sendLookPacketIgnoringQueuedLook(LocalPlayer playerEntity, PlayerLook playerLook) {
+        sendLookPacketIgnoringQueuedLook(playerEntity, playerLook.getYaw(), playerLook.getPitch());
+    }
+
+    public static boolean shouldBypassQueuedLookOverride() {
+        return BYPASS_QUEUED_LOOK_OVERRIDE.get();
     }
 
     public interface SequenceExtension {

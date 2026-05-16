@@ -19,7 +19,7 @@ public final class BedrockDebugLog {
     private static final String LEGACY_MODE_PROPERTY = "printer.bedrockDebugLogMode";
     private static final String PATH_PROPERTY = "litematica_printer.bedrockDebugLogPath";
     private static final String LEGACY_PATH_PROPERTY = "printer.bedrockDebugLogPath";
-    private static final String DEFAULT_MODE = "full"; // 日志模式
+    private static final String DEFAULT_MODE = "events"; // 日志模式
     private static final DateTimeFormatter SESSION_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Path LOG_PATH = resolveLogPath();
     private static final boolean ENABLED = resolveEnabled();

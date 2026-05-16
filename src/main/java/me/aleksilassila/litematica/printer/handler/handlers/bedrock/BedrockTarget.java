@@ -221,7 +221,13 @@ public class BedrockTarget {
                 for (int offset = 1; offset < 6; offset++) {
                     recordTemp(this.pistonPos.relative(this.layout.getPistonOffset(), offset));
                 }
-                BedrockPlacer.placePiston(this.pistonPos, this.layout.getExecuteFacing());
+                if (!BedrockPlacer.placePiston(this.pistonPos, this.layout.getExecuteFacing())) {
+                    if (BedrockDebugLog.isEnabled()) {
+                        BedrockDebugLog.write("target execute deferred bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                                + " reason=place_piston_failed");
+                    }
+                    break;
+                }
                 this.hasTried = true;
                 this.executeTick = this.tickTimes;
                 this.executedThisTick = true;
