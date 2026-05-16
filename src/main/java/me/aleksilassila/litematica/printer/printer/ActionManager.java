@@ -38,6 +38,7 @@ public class ActionManager {
     @Nullable
     public PlayerLook look;
     public boolean needWaitModifyLook = false;
+    private boolean waitForHorizontalLook = true;
 
     private ActionManager() {
     }
@@ -63,7 +64,7 @@ public class ActionManager {
         if (!needWaitModifyLook && look != null) {
             NetworkUtils.sendLookPacket(player, look);
         }
-        if (!useProtocol && !needWaitModifyLook) {
+        if (waitForHorizontalLook && !useProtocol && !needWaitModifyLook) {
             if (look != null) {
                 Direction lookDirection = DirectionUtils.orderedByNearest(look.yaw, look.pitch)[0];
                 if (lookDirection.getAxis().isHorizontal()) {
@@ -129,6 +130,10 @@ public class ActionManager {
         NetworkUtils.sendPacket(packet);
     }
 
+    public void setWaitForHorizontalLook(boolean waitForHorizontalLook) {
+        this.waitForHorizontalLook = waitForHorizontalLook;
+    }
+
     public void clearQueue() {
         this.target = null;
         this.side = null;
@@ -136,6 +141,7 @@ public class ActionManager {
         this.useShift = false;
         this.useProtocol = false;
         this.needWaitModifyLook = false;
+        this.waitForHorizontalLook = true;
         this.look = null;
     }
 }

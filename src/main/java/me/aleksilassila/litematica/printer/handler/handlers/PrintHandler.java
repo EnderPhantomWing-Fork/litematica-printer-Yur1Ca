@@ -16,6 +16,7 @@ import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.action.ClickAction;
 import me.aleksilassila.litematica.printer.utils.*;
+import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import net.minecraft.core.BlockPos;
@@ -123,7 +124,17 @@ public class PrintHandler extends ClientPlayerTickHandler {
             ActionManager.INSTANCE.hitModifier = hitModifier;
             ActionManager.INSTANCE.useProtocol = true;
         }
-        ActionManager.INSTANCE.setLook(action.getPlayerLook());
+        PlayerLook playerLook = action.getPlayerLook();
+        if (playerLook != null) {
+            Direction primaryLookDirection = DirectionUtils.orderedByNearest(playerLook.getYaw(), playerLook.getPitch())[0];
+            if (primaryLookDirection.getAxis().isHorizontal()) {
+                float currentPitch = player.getXRot();
+                currentPitch = Math.max(-40.0F, Math.min(40.0F, currentPitch));
+                playerLook = new PlayerLook(playerLook.getYaw(), currentPitch);
+                ActionManager.INSTANCE.setWaitForHorizontalLook(false);
+            }
+        }
+        ActionManager.INSTANCE.setLook(playerLook);
         HudStatsManager.INSTANCE.trackExpectedBlockState(HudStatsManager.Mode.PRINT, blockPos, ctx.requiredState);
         HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
         if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
