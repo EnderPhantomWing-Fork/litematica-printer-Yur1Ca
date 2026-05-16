@@ -31,7 +31,7 @@ public final class BedrockController {
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
-    private static final int MAX_VERTICAL_EXPOSURE_DEFERS = 12;
+    private static final int MAX_VERTICAL_EXPOSURE_DEFERS = 4;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
@@ -168,7 +168,7 @@ public final class BedrockController {
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " reason=await_target_exposure"
-                        + " defer=" + getExposureDeferralCount(stablePos) + "/" + (MAX_VERTICAL_EXPOSURE_DEFERS - 1));
+                        + " defer=" + getExposureDeferralCount(stablePos) + "/" + MAX_VERTICAL_EXPOSURE_DEFERS);
             }
             return false;
         }

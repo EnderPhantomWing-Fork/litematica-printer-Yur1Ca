@@ -93,7 +93,7 @@ public final class BedrockDebugLog {
             return Boolean.parseBoolean(legacy);
         }
         // Debug
-        return true;
+        return false;
     }
 
     private static String resolveMode() {
