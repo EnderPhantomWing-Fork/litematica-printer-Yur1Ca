@@ -17,12 +17,20 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public final class BedrockPlacer {
     private static final Minecraft CLIENT = Minecraft.getInstance();
     private static float lastYaw;
     private static float lastPitch;
-    private static BlockPos pendingHorizontalPistonPos;
-    private static Direction pendingHorizontalPistonFacing;
+    private static float lastYawOld;
+    private static float lastPitchOld;
+    private static float lastHeadYaw;
+    private static float lastHeadYawOld;
+    private static float lastBodyYaw;
+    private static float lastBodyYawOld;
+    private static final Map<BlockPos, Direction> pendingHorizontalPistonPlacements = new HashMap<>();
 
     private BedrockPlacer() {
     }
@@ -62,6 +70,21 @@ public final class BedrockPlacer {
         return placePiston(pistonPos, facing, pistonPos.relative(facing.getOpposite()));
     }
 
+    public static boolean preparePistonPlacementLook(BlockPos pistonPos, Direction facing) {
+        LocalPlayer player = CLIENT.player;
+        if (player == null || CLIENT.gameMode == null) {
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("preparePistonLook skipped piston=" + BedrockDebugLog.pos(pistonPos)
+                        + " facing=" + facing
+                        + " reason=no_player_or_gamemode");
+            }
+            return false;
+        }
+
+        PlayerLook look = new PlayerLook(facing.getOpposite());
+        return !ensureHorizontalLookSettled(player, pistonPos, facing, look, false);
+    }
+
     public static boolean placePiston(BlockPos pistonPos, Direction facing, BlockPos... preferredAnchors) {
         LocalPlayer player = CLIENT.player;
         if (player == null || CLIENT.gameMode == null) {
@@ -80,12 +103,10 @@ public final class BedrockPlacer {
         // Pistons face opposite to the direction the player is looking when placed.
         // We want the resulting piston facing to match `facing`, so look at the opposite side.
         PlayerLook look = new PlayerLook(facing.getOpposite());
-        if (armOrConsumeHorizontalLookDelay(player, pistonPos, facing, look)) {
+        if (ensureHorizontalLookSettled(player, pistonPos, facing, look, true)) {
             return false;
         }
-        if (!DirectionUtils.orderedByNearest(look.getYaw(), look.getPitch())[0].getAxis().isHorizontal()) {
-            NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
-        }
+        applyPlacementLook(player, look);
 
         BlockPos clickedPos = pistonPos.relative(facing.getOpposite());
         Direction clickedFace = facing;
@@ -104,6 +125,7 @@ public final class BedrockPlacer {
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(clickedPos), clickedFace, clickedPos, false);
 
         placeBlockAggressively(player, hitResult, false);
+        restoreLook(player);
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("placePiston piston=" + BedrockDebugLog.pos(pistonPos)
                     + " facing=" + facing
@@ -136,45 +158,69 @@ public final class BedrockPlacer {
         }
     }
 
-    private static boolean armOrConsumeHorizontalLookDelay(LocalPlayer player, BlockPos pistonPos, Direction facing, PlayerLook look) {
+    private static boolean ensureHorizontalLookSettled(LocalPlayer player, BlockPos pistonPos, Direction facing, PlayerLook look, boolean consumeReadyPlacement) {
         Direction lookDirection = DirectionUtils.orderedByNearest(look.getYaw(), look.getPitch())[0];
+        BlockPos pendingKey = pistonPos.immutable();
         if (!lookDirection.getAxis().isHorizontal()) {
-            clearPendingHorizontalPistonPlacement();
+            pendingHorizontalPistonPlacements.remove(pendingKey);
             return false;
         }
-        if (pistonPos.equals(pendingHorizontalPistonPos) && facing == pendingHorizontalPistonFacing) {
-            clearPendingHorizontalPistonPlacement();
+
+        Direction pendingFacing = pendingHorizontalPistonPlacements.get(pendingKey);
+        if (facing == pendingFacing) {
+            if (consumeReadyPlacement) {
+                pendingHorizontalPistonPlacements.remove(pendingKey);
+            }
             return false;
         }
-        pendingHorizontalPistonPos = pistonPos;
-        pendingHorizontalPistonFacing = facing;
+
+        pendingHorizontalPistonPlacements.put(pendingKey, facing);
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
         if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("placePiston deferred piston=" + BedrockDebugLog.pos(pistonPos)
+            BedrockDebugLog.write("preparePistonLook deferred piston=" + BedrockDebugLog.pos(pistonPos)
                     + " facing=" + facing
                     + " reason=horizontal_look_settle");
         }
         return true;
     }
 
-    private static void clearPendingHorizontalPistonPlacement() {
-        pendingHorizontalPistonPos = null;
-        pendingHorizontalPistonFacing = null;
+    private static void applyPlacementLook(LocalPlayer player, PlayerLook look) {
+        rememberLook(player);
+        NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
+        syncLocalLook(player, look.getYaw(), look.getPitch());
     }
 
     private static void rememberLook(LocalPlayer player) {
         lastYaw = player.getYRot();
         lastPitch = player.getXRot();
+        lastYawOld = player.yRotO;
+        lastPitchOld = player.xRotO;
+        lastHeadYaw = player.yHeadRot;
+        lastHeadYawOld = player.yHeadRotO;
+        lastBodyYaw = player.yBodyRot;
+        lastBodyYawOld = player.yBodyRotO;
     }
 
     private static void syncLocalLook(LocalPlayer player, float yaw, float pitch) {
         player.setYRot(yaw);
+        player.yRotO = yaw;
         player.setYHeadRot(yaw);
+        player.yHeadRotO = yaw;
+        player.yBodyRot = yaw;
+        player.yBodyRotO = yaw;
         player.setXRot(pitch);
+        player.xRotO = pitch;
     }
 
     private static void restoreLook(LocalPlayer player) {
-        syncLocalLook(player, lastYaw, lastPitch);
+        player.setYRot(lastYaw);
+        player.yRotO = lastYawOld;
+        player.setYHeadRot(lastHeadYaw);
+        player.yHeadRotO = lastHeadYawOld;
+        player.yBodyRot = lastBodyYaw;
+        player.yBodyRotO = lastBodyYawOld;
+        player.setXRot(lastPitch);
+        player.xRotO = lastPitchOld;
         // Keep the server on the placement look until its use-item packet has been
         // processed; restoring the server-side look immediately can race horizontal
         // piston placement and make the piston pick the player's real camera yaw.

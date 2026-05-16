@@ -4,15 +4,18 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
+import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class BedrockController {
@@ -28,6 +31,7 @@ public final class BedrockController {
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
+    private static final int MAX_VERTICAL_EXPOSURE_DEFERS = 12;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
@@ -37,6 +41,8 @@ public final class BedrockController {
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
     private static final Set<BlockPos> BLOCKED_CLEANUP_POSITIONS = new LinkedHashSet<>();
+    private static final Map<BlockPos, Integer> EXPOSURE_DEFERRALS = new HashMap<>();
+    private static final Map<BlockPos, Integer> EXPOSURE_BYPASS_USES = new HashMap<>();
     private static long nextAcceptTick = 0L;
     private static long nextExecuteTick = 0L;
     private static long lastProcessedTick = Long.MIN_VALUE;
@@ -64,6 +70,8 @@ public final class BedrockController {
         CLEANUP_QUEUE.clear();
         CONSERVATIVE_CLEANUP.clear();
         BLOCKED_CLEANUP_POSITIONS.clear();
+        EXPOSURE_DEFERRALS.clear();
+        EXPOSURE_BYPASS_USES.clear();
         nextAcceptTick = 0L;
         nextExecuteTick = 0L;
         lastProcessedTick = Long.MIN_VALUE;
@@ -99,6 +107,7 @@ public final class BedrockController {
         blockedCleanupDemandThisTick = 0;
         BLOCKED_CLEANUP_POSITIONS.clear();
 
+        purgeTargetsOutsideSelection();
         processCleanupQueue();
         cleanupPressureThisTick = sampleCleanupPressure(level);
 
@@ -140,24 +149,26 @@ public final class BedrockController {
     }
 
     public static boolean canAccept(BlockPos pos) {
-        AcceptProbe probe = probeCanAccept(pos);
+        BlockPos stablePos = stablePos(pos);
+        AcceptProbe probe = probeCanAccept(stablePos, true);
         if (probe.accepted()) {
             return true;
         }
         lastHudReason = probe.reason();
         if ("out_of_range_bedrock".equals(probe.reason())) {
-            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            setRetryCooldown(stablePos, SUBMIT_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " reason=out_of_range_bedrock");
             }
             return false;
         }
         if ("await_target_exposure".equals(probe.reason())) {
-            setRetryCooldown(pos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
+            setRetryCooldown(stablePos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
-                        + " reason=await_target_exposure");
+                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(stablePos)
+                        + " reason=await_target_exposure"
+                        + " defer=" + getExposureDeferralCount(stablePos) + "/" + (MAX_VERTICAL_EXPOSURE_DEFERS - 1));
             }
             return false;
         }
@@ -165,11 +176,11 @@ public final class BedrockController {
     }
 
     public static String debugCanAcceptReason(BlockPos pos) {
-        return probeCanAccept(pos).reason();
+        return probeCanAccept(stablePos(pos), false).reason();
     }
 
     public static boolean isPositionOnRetryCooldown(BlockPos pos) {
-        return isTargetOnRetryCooldown(pos);
+        return isTargetOnRetryCooldown(stablePos(pos));
     }
 
     public static int getSchedulingPenalty(BlockPos pos) {
@@ -218,27 +229,36 @@ public final class BedrockController {
     }
 
     public static boolean submit(BlockPos pos) {
+        BlockPos stablePos = stablePos(pos);
         ClientLevel level = CLIENT.level;
-        if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos))) return false;
-
-        if (!canAccept(pos)) {
+        if (level == null || !BedrockTargetBlocks.isTargetBlock(level.getBlockState(stablePos))) return false;
+        if (!isWithinActiveSelection(stablePos)) {
+            lastHudReason = "outside_selection";
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(stablePos)
+                        + " reason=outside_selection");
+            }
             return false;
         }
-        BedrockTarget target = new BedrockTarget(pos, level);
+
+        if (!canAccept(stablePos)) {
+            return false;
+        }
+        BedrockTarget target = new BedrockTarget(stablePos, level);
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             lastHudReason = "target_failed_on_create";
-            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            setRetryCooldown(stablePos, SUBMIT_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(pos) + " reason=target_failed_on_create");
+                BedrockDebugLog.write("submit failed bedrock=" + BedrockDebugLog.pos(stablePos) + " reason=target_failed_on_create");
             }
             return false;
         }
         BlockPos outOfRangePos = BedrockEnvironment.findFirstOutOfRangePosition(target.getStaticMachinePositions());
         if (outOfRangePos != null) {
             lastHudReason = "out_of_range_machine";
-            setRetryCooldown(pos, SUBMIT_RETRY_COOLDOWN_TICKS);
+            setRetryCooldown(stablePos, SUBMIT_RETRY_COOLDOWN_TICKS);
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(pos)
+                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " reason=out_of_range_machine"
                         + " blockingPos=" + BedrockDebugLog.pos(outOfRangePos));
             }
@@ -250,10 +270,10 @@ public final class BedrockController {
             lastHudReason = "pending_cleanup";
             var blockingState = level.getBlockState(pendingCleanupPos);
             expeditePendingCleanup(pendingCleanupPos, blockingState);
-            setRetryCooldown(pos, getPendingCleanupRetryTicks(blockingState));
-            noteSubmitRejected("pending_cleanup", pos, pendingCleanupPos);
+            setRetryCooldown(stablePos, getPendingCleanupRetryTicks(blockingState));
+            noteSubmitRejected("pending_cleanup", stablePos, pendingCleanupPos);
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
+                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " reason=pending_cleanup"
                         + " blockingPos=" + BedrockDebugLog.pos(pendingCleanupPos)
                         + " blockingState=" + BedrockDebugLog.describeState(blockingState));
@@ -264,10 +284,10 @@ public final class BedrockController {
         BedrockTarget conflict = findConflictTarget(target);
         if (conflict != null) {
             lastHudReason = "machine_overlap";
-            setRetryCooldown(pos, MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS);
-            noteSubmitRejected("machine_overlap", pos, conflict.getBedrockPos());
+            setRetryCooldown(stablePos, MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS);
+            noteSubmitRejected("machine_overlap", stablePos, conflict.getBedrockPos());
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(pos)
+                BedrockDebugLog.write("submit rejected bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " reason=machine_overlap"
                         + " conflictBedrock=" + BedrockDebugLog.pos(conflict.getBedrockPos())
                         + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
@@ -283,7 +303,7 @@ public final class BedrockController {
             submittedTargetsSinceReset++;
             lastHudReason = "running";
             if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit accepted bedrock=" + BedrockDebugLog.pos(pos)
+                BedrockDebugLog.write("submit accepted bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " piston=" + BedrockDebugLog.pos(target.getPistonPos())
                         + " torchSupport=" + BedrockDebugLog.pos(target.getTorchSupportPos())
                         + " torch=" + BedrockDebugLog.pos(target.getTorchPos())
@@ -1017,36 +1037,115 @@ public final class BedrockController {
         return AcceptProbe.accept();
     }
 
-    private static AcceptProbe probeCanAccept(BlockPos pos) {
+    private static AcceptProbe probeCanAccept(BlockPos pos, boolean mutateExposureState) {
+        BlockPos stablePos = stablePos(pos);
         AcceptProbe scanProbe = probeCanScanForTargets();
         if (!scanProbe.accepted()) {
             return scanProbe;
         }
-        if (isTargetOnRetryCooldown(pos)) {
+        if (!isWithinActiveSelection(stablePos)) {
+            return AcceptProbe.reject("outside_selection");
+        }
+        if (isTargetOnRetryCooldown(stablePos)) {
             return AcceptProbe.reject("retry_cooldown");
         }
         if (countActiveTargets() >= getActiveTargetCap()) {
             return AcceptProbe.reject("active_cap");
         }
-        if (isReservedByActiveTarget(pos)) {
+        if (isReservedByActiveTarget(stablePos)) {
             return AcceptProbe.reject("reserved_by_active_target");
         }
-        if (!BedrockEnvironment.canInteract(pos)) {
+        if (!BedrockEnvironment.canInteract(stablePos)) {
             return AcceptProbe.reject("out_of_range_bedrock");
         }
-        if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, pos)) {
-            return AcceptProbe.reject("await_target_exposure");
+        if (hasExposureBypass(stablePos)) {
+            if (mutateExposureState) {
+                consumeExposureBypass(stablePos);
+            }
+            return AcceptProbe.accept();
+        }
+        if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, stablePos)) {
+            int defers = EXPOSURE_DEFERRALS.getOrDefault(stablePos, 0) + 1;
+            if (defers < MAX_VERTICAL_EXPOSURE_DEFERS) {
+                if (mutateExposureState) {
+                    EXPOSURE_DEFERRALS.put(stablePos, defers);
+                }
+                return AcceptProbe.reject("await_target_exposure");
+            }
+            if (mutateExposureState) {
+                EXPOSURE_DEFERRALS.remove(stablePos);
+                EXPOSURE_BYPASS_USES.put(stablePos, 1);
+            }
+        } else {
+            if (mutateExposureState) {
+                EXPOSURE_DEFERRALS.remove(stablePos);
+                EXPOSURE_BYPASS_USES.remove(stablePos);
+            }
         }
 
         for (BedrockTarget target : TARGETS) {
-            if (target.getBedrockPos().equals(pos)) {
+            if (target.getBedrockPos().equals(stablePos)) {
                 return AcceptProbe.reject("duplicate_active_target");
             }
-            if (target.getPistonPos().equals(pos)) {
+            if (target.getPistonPos().equals(stablePos)) {
                 return AcceptProbe.reject("occupied_by_active_piston");
             }
         }
         return AcceptProbe.accept();
+    }
+
+    private static BlockPos stablePos(BlockPos pos) {
+        return pos == null ? null : pos.immutable();
+    }
+
+    private static int getExposureDeferralCount(BlockPos pos) {
+        BlockPos stablePos = stablePos(pos);
+        if (stablePos == null) {
+            return 0;
+        }
+        return EXPOSURE_DEFERRALS.getOrDefault(stablePos, 0);
+    }
+
+    private static boolean hasExposureBypass(BlockPos pos) {
+        return pos != null && EXPOSURE_BYPASS_USES.getOrDefault(pos, 0) > 0;
+    }
+
+    private static void consumeExposureBypass(BlockPos pos) {
+        if (pos == null) {
+            return;
+        }
+        int uses = EXPOSURE_BYPASS_USES.getOrDefault(pos, 0);
+        if (uses <= 1) {
+            EXPOSURE_BYPASS_USES.remove(pos);
+            return;
+        }
+        EXPOSURE_BYPASS_USES.put(pos, uses - 1);
+    }
+
+    private static boolean isWithinActiveSelection(BlockPos pos) {
+        return pos != null && LitematicaUtils.isWithinSelection1ModeRange(pos);
+    }
+
+    private static void purgeTargetsOutsideSelection() {
+        if (TARGETS.isEmpty()) {
+            return;
+        }
+
+        Iterator<BedrockTarget> iterator = TARGETS.iterator();
+        while (iterator.hasNext()) {
+            BedrockTarget target = iterator.next();
+            if (target == null || isWithinActiveSelection(target.getBedrockPos())) {
+                continue;
+            }
+            if (BedrockDebugLog.isEnabled()) {
+                BedrockDebugLog.write("controller remove target bedrock=" + BedrockDebugLog.pos(target.getBedrockPos())
+                        + " reason=outside_selection");
+            }
+            iterator.remove();
+            for (BlockPos tempPos : target.getCleanupPositions()) {
+                cleanupBlockOrQueue(tempPos, false);
+            }
+        }
     }
 
     private record AcceptProbe(boolean accepted, String reason) {

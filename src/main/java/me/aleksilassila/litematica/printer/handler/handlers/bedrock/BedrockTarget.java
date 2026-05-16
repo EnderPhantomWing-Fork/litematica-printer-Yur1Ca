@@ -214,6 +214,14 @@ public class BedrockTarget {
                     }
                     break;
                 }
+                if (!BedrockPlacer.preparePistonPlacementLook(this.pistonPos, this.layout.getExecuteFacing())) {
+                    if (BedrockDebugLog.isEnabled()) {
+                        BedrockDebugLog.write("target execute delayed bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                                + " tick=" + this.tickTimes
+                                + " reason=horizontal_look_settle");
+                    }
+                    break;
+                }
                 for (BlockPos torchPos : getOwnedTorchPositions()) {
                     BedrockBreaker.breakBlock(torchPos, Direction.DOWN, !this.conservativeSync);
                 }
@@ -286,6 +294,15 @@ public class BedrockTarget {
                     return this.status;
                 }
 
+                if (!level.getBlockState(this.pistonPos).isAir()
+                        && !BedrockPlacer.preparePistonPlacementLook(this.pistonPos, this.layout.getPrimingFacing())) {
+                    if (BedrockDebugLog.isEnabled()) {
+                        BedrockDebugLog.write("target powered stall delayed bedrock=" + BedrockDebugLog.pos(this.bedrockPos)
+                                + " tick=" + this.tickTimes
+                                + " reason=horizontal_look_settle");
+                    }
+                    break;
+                }
                 for (BlockPos torchPos : getOwnedTorchPositions()) {
                     BedrockBreaker.breakBlock(torchPos, Direction.DOWN, !this.conservativeSync);
                 }
@@ -742,6 +759,19 @@ public class BedrockTarget {
             this.stuckTicksCounter++;
             return;
         }
+        if (!this.hasTried
+                && level.getBlockState(this.pistonPos).is(Blocks.PISTON)
+                && !level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.EXTENDED)) {
+            Direction facing = level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.FACING);
+            if (facing == this.layout.getPrimingFacing() || facing == this.layout.getExecuteFacing()) {
+                if (hasOwnedTorchPowerSource()) {
+                    this.status = Status.UNEXTENDED_WITH_POWER_SOURCE;
+                } else {
+                    this.status = Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
+                }
+                return;
+            }
+        }
         if (this.hasTried
                 && level.getBlockState(this.pistonPos).is(Blocks.PISTON)
                 && !level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.EXTENDED)
@@ -841,6 +871,17 @@ public class BedrockTarget {
         }
         if (shouldWaitForPostExecuteAirTransition()) {
             return Status.NEEDS_WAITING;
+        }
+        if (!this.hasTried
+                && level.getBlockState(this.pistonPos).is(Blocks.PISTON)
+                && !level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.EXTENDED)) {
+            Direction facing = level.getBlockState(this.pistonPos).getValue(PistonBaseBlock.FACING);
+            if (facing == this.layout.getPrimingFacing() || facing == this.layout.getExecuteFacing()) {
+                if (hasOwnedTorchPowerSource()) {
+                    return Status.UNEXTENDED_WITH_POWER_SOURCE;
+                }
+                return Status.UNEXTENDED_WITHOUT_POWER_SOURCE;
+            }
         }
         if (this.hasTried
                 && level.getBlockState(this.pistonPos).is(Blocks.PISTON)

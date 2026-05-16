@@ -5,13 +5,23 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 
 public final class BedrockMachineLayout {
-    private static final Direction[] SEARCH_ORDER = {
+    private static final Direction[] VERTICAL_SEARCH_ORDER = {
             Direction.UP,
+            Direction.DOWN
+    };
+    private static final Direction[] HORIZONTAL_SEARCH_ORDER = {
             Direction.NORTH,
             Direction.SOUTH,
             Direction.EAST,
-            Direction.WEST,
-            Direction.DOWN
+            Direction.WEST
+    };
+    private static final Direction[] SEARCH_ORDER = {
+            Direction.UP,
+            Direction.DOWN,
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.EAST,
+            Direction.WEST
     };
 
     private final BlockPos bedrockPos;
@@ -30,18 +40,38 @@ public final class BedrockMachineLayout {
         if (level == null || bedrockPos == null) {
             return null;
         }
-        LayoutCandidate naturalSupportLayout = findLayout(level, bedrockPos, false);
-        if (naturalSupportLayout != null) {
-            return naturalSupportLayout.layout();
+        LayoutCandidate verticalNaturalLayout = findLayout(level, bedrockPos, false, VERTICAL_SEARCH_ORDER);
+        if (verticalNaturalLayout != null) {
+            return verticalNaturalLayout.layout();
         }
-        LayoutCandidate slimeFallbackLayout = findLayout(level, bedrockPos, true);
-        return slimeFallbackLayout == null ? null : slimeFallbackLayout.layout();
+        LayoutCandidate verticalFallbackLayout = findLayout(level, bedrockPos, true, VERTICAL_SEARCH_ORDER);
+        if (verticalFallbackLayout != null) {
+            return verticalFallbackLayout.layout();
+        }
+        LayoutCandidate horizontalNaturalLayout = findLayout(level, bedrockPos, false, HORIZONTAL_SEARCH_ORDER);
+        if (horizontalNaturalLayout != null) {
+            return horizontalNaturalLayout.layout();
+        }
+        LayoutCandidate horizontalFallbackLayout = findLayout(level, bedrockPos, true, HORIZONTAL_SEARCH_ORDER);
+        return horizontalFallbackLayout == null ? null : horizontalFallbackLayout.layout();
     }
 
-    private static LayoutCandidate findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback) {
+    private static boolean shouldDeferHorizontalFallbackUntilVerticalExposed(ClientLevel level, BlockPos bedrockPos) {
+        for (Direction direction : VERTICAL_SEARCH_ORDER) {
+            BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
+            if (isBlockingTarget(level, bedrockPos, layout.getPistonPos())
+                    || isBlockingTarget(level, bedrockPos, layout.getHeadPos())
+                    || hasBlockingTorchPlacement(level, bedrockPos, layout)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static LayoutCandidate findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback, Direction[] directions) {
         LayoutCandidate bestCandidate = null;
-        for (int searchIndex = 0; searchIndex < SEARCH_ORDER.length; searchIndex++) {
-            Direction direction = SEARCH_ORDER[searchIndex];
+        for (int searchIndex = 0; searchIndex < directions.length; searchIndex++) {
+            Direction direction = directions[searchIndex];
             BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
             if (!BedrockEnvironment.hasRoomForPiston(level, layout.getPistonPos(), layout.getPistonOffset())) {
                 continue;
@@ -93,20 +123,13 @@ public final class BedrockMachineLayout {
         if (level == null || bedrockPos == null) {
             return false;
         }
-        if (find(level, bedrockPos) != null) {
+        if (findLayout(level, bedrockPos, false, VERTICAL_SEARCH_ORDER) != null) {
             return false;
         }
-        for (Direction direction : SEARCH_ORDER) {
-            BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
-            if (isBlockingTarget(level, bedrockPos, layout.getPistonPos())
-                    || isBlockingTarget(level, bedrockPos, layout.getHeadPos())) {
-                return true;
-            }
-            if (hasBlockingTorchPlacement(level, bedrockPos, layout)) {
-                return true;
-            }
+        if (findLayout(level, bedrockPos, true, VERTICAL_SEARCH_ORDER) != null) {
+            return false;
         }
-        return false;
+        return shouldDeferHorizontalFallbackUntilVerticalExposed(level, bedrockPos);
     }
 
     public BlockPos getBedrockPos() {
