@@ -25,7 +25,13 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -44,6 +50,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
     private Action action;
 
     private SchematicBlockContext ctx;
+
+    private final Deque<BlockPos> sortedTargetQueue = new ArrayDeque<>();
+    private PrinterBox sortedTargetBox;
+    private boolean hasMoreSortedIterationPositions;
 
     public PrintHandler() {
         super(NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
@@ -66,6 +76,27 @@ public class PrintHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean isSchematicBlockHandler() {
         return true;
+    }
+
+    @Override
+    protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
+            this.sortedTargetQueue.clear();
+            this.sortedTargetBox = null;
+            return playerInteractionBox;
+        }
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        if (schematic == null || player == null) {
+            this.sortedTargetQueue.clear();
+            this.sortedTargetBox = null;
+            return playerInteractionBox;
+        }
+        if (this.sortedTargetBox != playerInteractionBox) {
+            this.sortedTargetQueue.clear();
+            this.sortedTargetBox = playerInteractionBox;
+        }
+        fillSortedTargetQueue(playerInteractionBox, schematic);
+        return this::createSortedTargetIterator;
     }
 
     @Override
@@ -144,6 +175,64 @@ public class PrintHandler extends ClientPlayerTickHandler {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
         }
         setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+    }
+
+    private void fillSortedTargetQueue(PrinterBox playerInteractionBox, WorldSchematic schematic) {
+        int maxTotalIter = getMaxTotalIterationsPerTick();
+        int collectLimit = maxTotalIter > 0 ? Math.max(0, maxTotalIter - 1) : Integer.MAX_VALUE;
+        List<BlockPos> positions = new ArrayList<>();
+        while (!this.sortedTargetQueue.isEmpty()) {
+            positions.add(this.sortedTargetQueue.removeFirst());
+        }
+        Iterator<BlockPos> iterator = playerInteractionBox.iterator();
+        while (iterator.hasNext() && positions.size() < collectLimit) {
+            positions.add(iterator.next());
+        }
+        positions.sort(createPrintTargetComparator(schematic));
+        this.sortedTargetQueue.addAll(positions);
+        this.hasMoreSortedIterationPositions = maxTotalIter > 0 && iterator.hasNext();
+    }
+
+    private Iterator<BlockPos> createSortedTargetIterator() {
+        return new Iterator<>() {
+            private boolean returnedSentinel;
+
+            @Override
+            public boolean hasNext() {
+                return !sortedTargetQueue.isEmpty() || hasMoreSortedIterationPositions && !returnedSentinel;
+            }
+
+            @Override
+            public BlockPos next() {
+                if (!sortedTargetQueue.isEmpty()) {
+                    return sortedTargetQueue.removeFirst();
+                }
+                this.returnedSentinel = true;
+                return null;
+            }
+        };
+    }
+
+    private Comparator<BlockPos> createPrintTargetComparator(WorldSchematic schematic) {
+        Item heldItem = player.getMainHandItem().getItem();
+        Vec3 eye = player.getEyePosition();
+        Vec3 view = player.getLookAngle().normalize();
+        return Comparator
+                .comparing((BlockPos pos) -> !isHoldingRequiredItem(schematic, heldItem, pos))
+                .thenComparingDouble(pos -> getViewAngleScore(eye, view, pos))
+                .thenComparingDouble(pos -> Vec3.atCenterOf(pos).distanceToSqr(eye));
+    }
+
+    private static boolean isHoldingRequiredItem(WorldSchematic schematic, Item heldItem, BlockPos pos) {
+        return schematic.getBlockState(pos).getBlock().asItem() == heldItem;
+    }
+
+    private static double getViewAngleScore(Vec3 eye, Vec3 view, BlockPos pos) {
+        Vec3 toTarget = Vec3.atCenterOf(pos).subtract(eye);
+        if (toTarget.lengthSqr() < 1.0E-6D) {
+            return 0.0D;
+        }
+        return -view.dot(toTarget.normalize());
     }
 }
 

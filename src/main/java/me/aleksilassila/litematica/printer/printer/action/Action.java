@@ -7,6 +7,8 @@ import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.printer.PrinterUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.DirectionUtils;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -112,16 +114,14 @@ public class Action {
     @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
     public @Nullable Direction getValidSide(ClientLevel world, BlockPos pos) {
         List<Direction> orderedSides = getOrderedSides();
+        sortSidesByPlayerView(orderedSides, pos);
+        if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
+            return orderedSides.isEmpty() ? null : orderedSides.get(0);
+        }
         List<Direction> validSides = new ArrayList<>();
         for (Direction side : orderedSides) {
             BlockPos neighborPos = pos.relative(side);
             BlockState neighborState = world.getBlockState(neighborPos);
-            if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport
-                // TODO: 没理解, 都凭空放置了, 还检查相邻方块类型？所以注释掉了
-                // && !Implementation.isInteractive(neighborState.getBlock())
-            ) {
-                return side;
-            }
             if (PrinterUtils.canBeClicked(world, neighborPos) && !BlockUtils.isReplaceable(neighborState)) {
                 validSides.add(side);
             }
@@ -138,6 +138,25 @@ public class Action {
             }
         }
         return validSides.get(0);
+    }
+
+    private static void sortSidesByPlayerView(List<Direction> sides, BlockPos pos) {
+        if (!Configs.Print.PRINT_SORT_SIDES.getBooleanValue() || sides.size() < 2) {
+            return;
+        }
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return;
+        }
+        Vec3 eye = player.getEyePosition();
+        Vec3 center = Vec3.atCenterOf(pos);
+        sides.sort(Comparator.comparingDouble(side -> -getClickedFaceScore(eye, center, side)));
+    }
+
+    private static double getClickedFaceScore(Vec3 eye, Vec3 center, Direction side) {
+        Vec3 toEye = eye.subtract(center);
+        Vec3 clickedFaceNormal = Vec3.atLowerCornerOf(DirectionUtils.getVector(side.getOpposite()));
+        return clickedFaceNormal.dot(toEye);
     }
 
     public Action setItem(Item item) {

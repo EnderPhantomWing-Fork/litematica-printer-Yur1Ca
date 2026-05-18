@@ -433,6 +433,16 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
+        // 打印目标排序
+        public static final ConfigBoolean PRINT_SORT_TARGETS = bool("printSortTargets")
+                .defaultValue(true)
+                .build();
+
+        // 放置面排序
+        public static final ConfigBoolean PRINT_SORT_SIDES = bool("printSortSides")
+                .defaultValue(true)
+                .build();
+
         // 跳过放置
         public static final ConfigBoolean PRINT_SKIP = bool("printSkip")
                 .defaultValue(false)
@@ -521,6 +531,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SELECTION_TYPE,
                 EASY_PLACE_PROTOCOL,
                 PLACE_IN_AIR,
+                PRINT_SORT_TARGETS,
+                PRINT_SORT_SIDES,
                 PRINT_FORCED_SNEAK,
                 BREAK_WRONG_BLOCK,
                 BREAK_EXTRA_BLOCK,
