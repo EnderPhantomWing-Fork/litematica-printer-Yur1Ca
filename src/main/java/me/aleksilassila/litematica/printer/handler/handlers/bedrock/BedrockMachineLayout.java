@@ -56,18 +56,6 @@ public final class BedrockMachineLayout {
         return horizontalFallbackLayout == null ? null : horizontalFallbackLayout.layout();
     }
 
-    private static boolean shouldDeferHorizontalFallbackUntilVerticalExposed(ClientLevel level, BlockPos bedrockPos) {
-        for (Direction direction : VERTICAL_SEARCH_ORDER) {
-            BedrockMachineLayout layout = new BedrockMachineLayout(bedrockPos, direction);
-            if (isBlockingTarget(level, bedrockPos, layout.getPistonPos())
-                    || isBlockingTarget(level, bedrockPos, layout.getHeadPos())
-                    || hasBlockingTorchPlacement(level, bedrockPos, layout)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private static LayoutCandidate findLayout(ClientLevel level, BlockPos bedrockPos, boolean allowSlimeFallback, Direction[] directions) {
         LayoutCandidate bestCandidate = null;
         for (int searchIndex = 0; searchIndex < directions.length; searchIndex++) {
@@ -119,19 +107,6 @@ public final class BedrockMachineLayout {
         return bestCandidate;
     }
 
-    public static boolean shouldDeferUntilExposed(ClientLevel level, BlockPos bedrockPos) {
-        if (level == null || bedrockPos == null) {
-            return false;
-        }
-        if (findLayout(level, bedrockPos, false, VERTICAL_SEARCH_ORDER) != null) {
-            return false;
-        }
-        if (findLayout(level, bedrockPos, true, VERTICAL_SEARCH_ORDER) != null) {
-            return false;
-        }
-        return shouldDeferHorizontalFallbackUntilVerticalExposed(level, bedrockPos);
-    }
-
     public BlockPos getBedrockPos() {
         return this.bedrockPos;
     }
@@ -158,43 +133,6 @@ public final class BedrockMachineLayout {
 
     public Direction getExecuteFacing() {
         return this.pistonOffset.getOpposite();
-    }
-
-    private static boolean isBlockingTarget(ClientLevel level, BlockPos bedrockPos, BlockPos pos) {
-        return pos != null
-                && !pos.equals(bedrockPos)
-                && !level.isOutsideBuildHeight(pos)
-                && BedrockTargetBlocks.isTargetBlock(level.getBlockState(pos));
-    }
-
-    private static boolean hasBlockingTorchPlacement(ClientLevel level, BlockPos bedrockPos, BedrockMachineLayout layout) {
-        BlockPos centerPos = layout.getPistonPos();
-        Direction excludedAxis = layout.getPistonOffset().getOpposite();
-
-        for (Direction direction : new Direction[]{Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH}) {
-            if (direction == excludedAxis) {
-                continue;
-            }
-
-            BlockPos topSupportPos = centerPos.relative(direction);
-            BlockPos topTorchPos = topSupportPos.above();
-            if (isBlockingTarget(level, bedrockPos, topSupportPos) || isBlockingTarget(level, bedrockPos, topTorchPos)) {
-                return true;
-            }
-
-            BlockPos lowerSupportPos = topSupportPos.below();
-            BlockPos lowerTorchPos = lowerSupportPos.above();
-            if (isBlockingTarget(level, bedrockPos, lowerSupportPos) || isBlockingTarget(level, bedrockPos, lowerTorchPos)) {
-                return true;
-            }
-
-            BlockPos wallTorchPos = centerPos.relative(direction);
-            if (isBlockingTarget(level, bedrockPos, wallTorchPos)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static int layoutScore(ClientLevel level, BedrockTorchPlacement placement) {

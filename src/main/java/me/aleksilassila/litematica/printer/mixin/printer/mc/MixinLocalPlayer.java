@@ -5,6 +5,7 @@ import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
+import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockPlacer;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
@@ -84,6 +85,11 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
         InteractionUtils.INSTANCE.preprocess();
         InteractionUtils.INSTANCE.onTick();
         ClientPlayerTickManager.tick();
+    }
+
+    @Inject(at = @At("TAIL"), method = "tick")
+    public void litematica_printer$sendPendingBedrockLookAtTickTail(CallbackInfo ci) {
+        BedrockPlacer.sendPendingHorizontalLookAtTickTail((LocalPlayer) (Object) this);
     }
 
     @Inject(method = "openTextEdit", at = @At("HEAD"), cancellable = true)

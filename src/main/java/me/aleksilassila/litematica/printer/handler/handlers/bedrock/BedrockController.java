@@ -30,8 +30,6 @@ public final class BedrockController {
     private static final String CLEANUP_RETRY_COOLDOWN_KEY = "cleanup_retry";
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
-    private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
-    private static final int MAX_VERTICAL_EXPOSURE_DEFERS = 4;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
@@ -43,8 +41,6 @@ public final class BedrockController {
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
     private static final Set<BlockPos> CONSERVATIVE_CLEANUP = new LinkedHashSet<>();
     private static final Set<BlockPos> BLOCKED_CLEANUP_POSITIONS = new LinkedHashSet<>();
-    private static final Map<BlockPos, Integer> EXPOSURE_DEFERRALS = new HashMap<>();
-    private static final Map<BlockPos, Integer> EXPOSURE_BYPASS_USES = new HashMap<>();
     private static final Map<BlockPos, SubmissionPlan> SUBMISSION_PLANS = new HashMap<>();
     private static long nextAcceptTick = 0L;
     private static long nextExecuteTick = 0L;
@@ -73,8 +69,6 @@ public final class BedrockController {
         CLEANUP_QUEUE.clear();
         CONSERVATIVE_CLEANUP.clear();
         BLOCKED_CLEANUP_POSITIONS.clear();
-        EXPOSURE_DEFERRALS.clear();
-        EXPOSURE_BYPASS_USES.clear();
         SUBMISSION_PLANS.clear();
         nextAcceptTick = 0L;
         nextExecuteTick = 0L;
@@ -164,15 +158,6 @@ public final class BedrockController {
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(stablePos)
                         + " reason=out_of_range_bedrock");
-            }
-            return false;
-        }
-        if ("await_target_exposure".equals(probe.reason())) {
-            setRetryCooldown(stablePos, STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS);
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("submit deferred bedrock=" + BedrockDebugLog.pos(stablePos)
-                        + " reason=await_target_exposure"
-                        + " defer=" + getExposureDeferralCount(stablePos) + "/" + MAX_VERTICAL_EXPOSURE_DEFERS);
             }
             return false;
         }
@@ -1067,31 +1052,6 @@ public final class BedrockController {
         if (!BedrockEnvironment.canInteract(stablePos)) {
             return AcceptProbe.reject("out_of_range_bedrock");
         }
-        if (hasExposureBypass(stablePos)) {
-            if (mutateExposureState) {
-                consumeExposureBypass(stablePos);
-            }
-            return AcceptProbe.accept();
-        }
-        if (CLIENT.level != null && BedrockMachineLayout.shouldDeferUntilExposed(CLIENT.level, stablePos)) {
-            int defers = EXPOSURE_DEFERRALS.getOrDefault(stablePos, 0) + 1;
-            if (defers < MAX_VERTICAL_EXPOSURE_DEFERS) {
-                if (mutateExposureState) {
-                    EXPOSURE_DEFERRALS.put(stablePos, defers);
-                }
-                return AcceptProbe.reject("await_target_exposure");
-            }
-            if (mutateExposureState) {
-                EXPOSURE_DEFERRALS.remove(stablePos);
-                EXPOSURE_BYPASS_USES.put(stablePos, 1);
-            }
-        } else {
-            if (mutateExposureState) {
-                EXPOSURE_DEFERRALS.remove(stablePos);
-                EXPOSURE_BYPASS_USES.remove(stablePos);
-            }
-        }
-
         for (BedrockTarget target : TARGETS) {
             if (target.getBedrockPos().equals(stablePos)) {
                 return AcceptProbe.reject("duplicate_active_target");
@@ -1122,30 +1082,6 @@ public final class BedrockController {
                 slimePos,
                 ClientPlayerTickManager.getCurrentHandlerTime()
         ));
-    }
-
-    private static int getExposureDeferralCount(BlockPos pos) {
-        BlockPos stablePos = stablePos(pos);
-        if (stablePos == null) {
-            return 0;
-        }
-        return EXPOSURE_DEFERRALS.getOrDefault(stablePos, 0);
-    }
-
-    private static boolean hasExposureBypass(BlockPos pos) {
-        return pos != null && EXPOSURE_BYPASS_USES.getOrDefault(pos, 0) > 0;
-    }
-
-    private static void consumeExposureBypass(BlockPos pos) {
-        if (pos == null) {
-            return;
-        }
-        int uses = EXPOSURE_BYPASS_USES.getOrDefault(pos, 0);
-        if (uses <= 1) {
-            EXPOSURE_BYPASS_USES.remove(pos);
-            return;
-        }
-        EXPOSURE_BYPASS_USES.put(pos, uses - 1);
     }
 
     private static boolean isWithinActiveSelection(BlockPos pos) {
