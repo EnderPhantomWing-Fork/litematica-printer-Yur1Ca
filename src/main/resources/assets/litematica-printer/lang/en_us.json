@@ -10,6 +10,8 @@
   "litematica-printer.config.breakBlocksPerTick.desc": "Number of blocks mining mode can process per game tick. Higher values mean more blocks mined each time, provided they can be broken within one tick.\nSet to §b0§r for no limit.",
   "litematica-printer.config.breakCheckHardness": "Check Block Hardness",
   "litematica-printer.config.breakCheckHardness.desc": "Whether to skip unbreakable blocks (blocks with hardness of -1). If only the hardness of certain blocks has been modified on the server side, you can disable this option.",
+  "litematica-printer.config.breakAutoTool": "Auto Tool Switch",
+  "litematica-printer.config.breakAutoTool.desc": "Automatically switch to a better tool before breaking blocks.\nIf Tweakeroo's tool switch is enabled, Tweakeroo is used instead to avoid duplicate switching.",
   "litematica-printer.config.breakCooldown": "Mining Retry Cooldown",
   "litematica-printer.config.breakCooldown.desc": "Cooldown time after breaking the same position in mining mode (in game ticks). Retry only after the cooldown ends.",
   "litematica-printer.config.bedrockInterval": "Bedrock Interval Time",

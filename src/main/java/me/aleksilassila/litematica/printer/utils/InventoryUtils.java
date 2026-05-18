@@ -27,6 +27,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 
 //#if MC >= 12105
 import net.minecraft.network.HashedStack;
@@ -386,6 +387,41 @@ public class InventoryUtils {
         // 超过冷却时间，发送消息并更新【该Key】的最后发送时间
         InfoUtils.showGuiOrInGameMessage(type, messageKey);
         LAST_MESSAGE_SEND_TIME.put(messageKey, currentTime);
+    }
+
+    public static boolean switchToBestTool(LocalPlayer player, BlockState blockState) {
+        if (player == null || blockState == null || blockState.isAir()) {
+            return false;
+        }
+        if (PlayerUtils.getAbilities(player).instabuild) {
+            return false;
+        }
+
+        Inventory inventory = player.getInventory();
+        ItemStack currentStack = player.getMainHandItem();
+        float currentSpeed = PlayerUtils.getBlockBreakingSpeed(player, blockState, currentStack);
+        float bestSpeed = currentSpeed;
+        int bestSlot = -1;
+        ItemStack bestStack = ItemStack.EMPTY;
+
+        NonNullList<ItemStack> stacks = getMainStacks(inventory);
+        for (int slot = 0; slot < stacks.size(); slot++) {
+            ItemStack stack = stacks.get(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            float speed = PlayerUtils.getBlockBreakingSpeed(player, blockState, stack);
+            if (speed > bestSpeed) {
+                bestSpeed = speed;
+                bestSlot = slot;
+                bestStack = stack;
+            }
+        }
+
+        if (bestSlot == -1 || bestStack.isEmpty()) {
+            return false;
+        }
+        return setPickedItemToHand(bestSlot, bestStack, client);
     }
 
     public static boolean switchToItems(LocalPlayer player, Item[] items) {

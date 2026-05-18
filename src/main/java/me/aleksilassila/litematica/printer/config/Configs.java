@@ -354,6 +354,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
+        public static final ConfigBoolean BREAK_AUTO_TOOL = bool("breakAutoTool")
+                .defaultValue(false)
+                .build();
+
         // 模式限制器
         public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
@@ -377,6 +381,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 BREAK_CHECK_HARDNESS,
+                BREAK_AUTO_TOOL,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_USE_PACKET,
                 BREAK_INTERVAL,

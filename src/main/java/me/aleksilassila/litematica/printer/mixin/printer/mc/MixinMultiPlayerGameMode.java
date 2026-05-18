@@ -6,9 +6,8 @@ import me.aleksilassila.litematica.printer.mixin.MinecraftAccessor;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
-import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
-import me.aleksilassila.litematica.printer.utils.mods.TweakerooUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
@@ -368,11 +367,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             return BlockBreakResult.FAILED;
         }
 
-        if (ModLoadUtils.isTweakerooLoaded()) {
-            if (TweakerooUtils.isToolSwitchEnabled()) {
-                TweakerooUtils.trySwitchToEffectiveTool(blockPos);
-            }
-        } else {
+        if (!InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
             ensureHasSentCarriedItem();
         }
 
@@ -470,11 +465,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             MineDebugLog.write("mine break completed pos=" + MineDebugLog.pos(blockPos) + " path=instabuild");
             return BlockBreakResult.COMPLETED;
         }
-        if (ModLoadUtils.isTweakerooLoaded()) {
-            if (TweakerooUtils.isToolSwitchEnabled()) {
-                TweakerooUtils.trySwitchToEffectiveTool(blockPos);
-            }
-        } else {
+        if (!InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
             ensureHasSentCarriedItem();
         }
         boolean useDelayedDestroy = forceDelayedDestroy || Configs.Break.BREAK_USE_DELAYED_DESTROY.getBooleanValue();

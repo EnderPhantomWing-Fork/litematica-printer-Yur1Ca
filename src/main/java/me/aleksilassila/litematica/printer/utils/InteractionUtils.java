@@ -86,6 +86,21 @@ public class InteractionUtils {
         }
     }
 
+    public static boolean trySwitchToEffectiveTool(BlockPos pos, BlockState blockState) {
+        if (pos == null || blockState == null || blockState.isAir() || blockState.getBlock() instanceof LiquidBlock) {
+            return false;
+        }
+        if (ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isToolSwitchEnabled()) {
+            TweakerooUtils.trySwitchToEffectiveTool(pos);
+            return true;
+        }
+        if (!Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()) {
+            return false;
+        }
+        LocalPlayer player = client.player;
+        return player != null && InventoryUtils.switchToBestTool(player, blockState);
+    }
+
     public void add(BlockPos pos) {
         if (pos == null) return;
         breakQueue.add(pos);
@@ -129,11 +144,6 @@ public class InteractionUtils {
                 }
                 if (!ConfigUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
                     continue;
-                }
-                if (ModLoadUtils.isTweakerooLoaded()) {
-                    if (TweakerooUtils.isToolSwitchEnabled()) {
-                        TweakerooUtils.trySwitchToEffectiveTool(pos);
-                    }
                 }
                 if (continueDestroyBlock(pos, Direction.DOWN) == BlockBreakResult.IN_PROGRESS) {
                     breakPos = pos;

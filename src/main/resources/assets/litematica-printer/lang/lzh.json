@@ -12,6 +12,8 @@
   "litematica-printer.config.breakBlocksPerTick.desc": "採掘模式每遊戲刻可處之石數。值愈高，則每刻所採愈多（然石須於一刻內可破）。\n設§b0§r則無上限。",
   "litematica-printer.config.breakCheckHardness": "察石之堅",
   "litematica-printer.config.breakCheckHardness.desc": "是否繞過堅不可破之石（硬度為-1者）。若伺服器獨改某石硬度，可閉此選項。",
+  "litematica-printer.config.breakAutoTool": "自易其器",
+  "litematica-printer.config.breakAutoTool.desc": "破石前自擇囊中較適之器。\n若 Tweakeroo 之工具切換已啟，則從 Tweakeroo，以免重切。",
   "litematica-printer.config.breakCooldown": "採掘重試調息刻",
   "litematica-printer.config.breakCooldown.desc": "採掘模式中，同處破石後須靜候之刻數，期滿方可再試。",
   "litematica-printer.config.breakInterval": "採掘間隔刻",

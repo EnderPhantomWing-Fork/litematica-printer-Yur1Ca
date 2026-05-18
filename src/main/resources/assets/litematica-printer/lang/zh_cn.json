@@ -10,6 +10,8 @@
   "litematica-printer.config.breakBlocksPerTick.desc": "挖掘模式每游戏刻可处理的方块数量。数值越高，每次挖掘的方块越多(前提是方块可以在一游戏刻内破坏)。\n设为§b0§r时无上限。",
   "litematica-printer.config.breakCheckHardness": "检查方块硬度",
   "litematica-printer.config.breakCheckHardness.desc": "是否跳过无法破坏的方块(也就是硬度为-1的方块)，如果只在服务端修改了某些方块的硬度，可以关闭此选项。",
+  "litematica-printer.config.breakAutoTool": "自动切换工具",
+  "litematica-printer.config.breakAutoTool.desc": "破坏方块前自动切换到背包中更合适的工具。\n如果 Tweakeroo 的工具切换功能已开启，将优先使用 Tweakeroo，避免重复切换。",
   "litematica-printer.config.breakCooldown": "挖掘重试冷却时间",
   "litematica-printer.config.breakCooldown.desc": "同一位置在挖掘模式下破坏后的冷却时间(单位为游戏刻)，冷却结束后才会重试破坏操作。",
   "litematica-printer.config.bedrockInterval": "破基岩间隔时间",
