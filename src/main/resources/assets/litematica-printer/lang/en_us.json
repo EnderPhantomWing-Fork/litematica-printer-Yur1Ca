@@ -138,6 +138,8 @@
   "litematica-printer.config.placeCooldown.desc": "Cooldown time after placing blocks at the same location (in game ticks). Retry placement operation only after cooldown ends.\n§c§lDo not set to 0 unless necessary, otherwise it will cause placing extra blocks, inability to place correctly and other issues!§r",
   "litematica-printer.config.placeInAir": "Place in Air",
   "litematica-printer.config.placeInAir.desc": "Ignore block support requirements and place blocks directly in air positions (applicable to unsupported decorative blocks).",
+  "litematica-printer.config.tweakerooAngelBlockMayBuild": "Relax Tweakeroo Angel Block Check",
+"litematica-printer.config.tweakerooAngelBlockMayBuild.desc": "When enabled, players with build permission can also pass Tweakeroo's angel block placement check. This usually affects survival mode.\\nWhen disabled, Tweakeroo's original creative-only behavior is preserved.",
   "litematica-printer.config.printSortSides": "Smart Side Sorting",
   "litematica-printer.config.printSortSides.desc": "When enabled, prioritize placement faces that are closer to the player's view and usually easier to click.",
   "litematica-printer.config.printSortTargets": "Smart Target Sorting",

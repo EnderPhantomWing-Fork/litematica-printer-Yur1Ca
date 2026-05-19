@@ -135,7 +135,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 核心 - 延迟检测
         public static final ConfigBoolean LAG_CHECK = bool("printerLagCheck")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         public static final ConfigInteger LAG_CHECK_MAX = integer("printerLagCheckMax")
@@ -225,6 +225,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue("#4CFF4CE6")
                 .build();
 
+        // Tweakeroo - 放宽凭空放置限制
+        public static final ConfigBoolean TWEAKEROO_ANGEL_BLOCK_MAY_BUILD = bool("tweakerooAngelBlockMayBuild")
+                .defaultValue(false)
+                .setVisible(ModLoadUtils::isTweakerooLoaded)
+                .build();
+
         // 通用配置项列表（按功能分类排序）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 WORK_SWITCH,
@@ -253,7 +259,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 CLOUD_INVENTORY,
                 AUTO_INVENTORY,
                 INVENTORY_LIST,
-                SYNC_INVENTORY_COLOR
+                SYNC_INVENTORY_COLOR,
+                TWEAKEROO_ANGEL_BLOCK_MAY_BUILD
         );
     }
 
