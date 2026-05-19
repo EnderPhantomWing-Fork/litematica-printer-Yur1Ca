@@ -192,42 +192,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(RENDER_HUD::getBooleanValue)
                 .build();
 
-        // 核心 - 显示工作目标高亮
-        public static final ConfigBooleanHotkeyed RENDER_WORK_TARGETS = booleanHotkey("renderWorkTargets")
-                .defaultValue(false)
-                .build();
-
-        public static final ConfigInteger RENDER_WORK_TARGETS_DURATION = integer("renderWorkTargetsDuration")
-                .defaultValue(4)
-                .range(1, 20)
-                .setVisible(RENDER_WORK_TARGETS::getBooleanValue)
-                .build();
-
-        public static final ConfigColor RENDER_WORK_TARGETS_PRINT_COLOR = color("renderWorkTargetsPrintColor")
-                .defaultValue("#4CFF4CE6")
-                .setVisible(RENDER_WORK_TARGETS::getBooleanValue)
-                .build();
-
-        public static final ConfigColor RENDER_WORK_TARGETS_MINE_COLOR = color("renderWorkTargetsMineColor")
-                .defaultValue("#FF5555E6")
-                .setVisible(RENDER_WORK_TARGETS::getBooleanValue)
-                .build();
-
-        public static final ConfigColor RENDER_WORK_TARGETS_FILL_COLOR = color("renderWorkTargetsFillColor")
-                .defaultValue("#4CA3FFE6")
-                .setVisible(RENDER_WORK_TARGETS::getBooleanValue)
-                .build();
-
-        public static final ConfigColor RENDER_WORK_TARGETS_FLUID_COLOR = color("renderWorkTargetsFluidColor")
-                .defaultValue("#40D0FFE6")
-                .setVisible(RENDER_WORK_TARGETS::getBooleanValue)
-                .build();
-
-        public static final ConfigColor RENDER_WORK_TARGETS_BEDROCK_COLOR = color("renderWorkTargetsBedrockColor")
-                .defaultValue("#FFB347E6")
-                .setVisible(RENDER_WORK_TARGETS::getBooleanValue)
-                .build();
-
         // 核心 - 自动禁用打印机
         public static final ConfigBoolean AUTO_DISABLE_PRINTER = bool("printerAutoDisable")
                 .defaultValue(true)
@@ -276,13 +240,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 RENDER_HUD_X,
                 RENDER_HUD_Y,
                 RENDER_HUD_SCALE,
-                RENDER_WORK_TARGETS,
-                RENDER_WORK_TARGETS_DURATION,
-                RENDER_WORK_TARGETS_PRINT_COLOR,
-                RENDER_WORK_TARGETS_MINE_COLOR,
-                RENDER_WORK_TARGETS_FILL_COLOR,
-                RENDER_WORK_TARGETS_FLUID_COLOR,
-                RENDER_WORK_TARGETS_BEDROCK_COLOR,
                 LAG_CHECK,
                 LAG_CHECK_MAX,
                 CHECK_PLAYER_INTERACTION_RANGE,
@@ -486,24 +443,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
-        // 基于背包物品高亮可放置投影
-        public static final ConfigBooleanHotkeyed INVENTORY_SCHEMATIC_HIGHLIGHT = booleanHotkey("inventorySchematicHighlight")
-                .defaultValue(false)
-                .build();
-
-        // 基于背包物品高亮颜色
-        public static final ConfigColor INVENTORY_SCHEMATIC_HIGHLIGHT_COLOR = color("inventorySchematicHighlightColor")
-                .defaultValue("#4CFF4CE6")
-                .setVisible(INVENTORY_SCHEMATIC_HIGHLIGHT::getBooleanValue)
-                .build();
-
-        // 基于背包物品高亮刷新间隔
-        public static final ConfigInteger INVENTORY_SCHEMATIC_HIGHLIGHT_INTERVAL = integer("inventorySchematicHighlightInterval")
-                .defaultValue(1)
-                .range(1, 20)
-                .setVisible(INVENTORY_SCHEMATIC_HIGHLIGHT::getBooleanValue)
-                .build();
-
         // 跳过放置
         public static final ConfigBoolean PRINT_SKIP = bool("printSkip")
                 .defaultValue(false)
@@ -594,9 +533,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PLACE_IN_AIR,
                 PRINT_SORT_TARGETS,
                 PRINT_SORT_SIDES,
-                INVENTORY_SCHEMATIC_HIGHLIGHT,
-                INVENTORY_SCHEMATIC_HIGHLIGHT_COLOR,
-                INVENTORY_SCHEMATIC_HIGHLIGHT_INTERVAL,
                 PRINT_FORCED_SNEAK,
                 BREAK_WRONG_BLOCK,
                 BREAK_EXTRA_BLOCK,

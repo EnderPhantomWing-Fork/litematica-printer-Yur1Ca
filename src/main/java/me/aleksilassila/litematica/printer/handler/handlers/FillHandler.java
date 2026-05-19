@@ -9,7 +9,6 @@ import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
-import me.aleksilassila.litematica.printer.render.WorkTargetHighlighter;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
@@ -135,7 +134,6 @@ public class FillHandler extends ClientPlayerTickHandler {
                 action = new Action()
                         .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
             }
-            WorkTargetHighlighter.record(HudStatsManager.Mode.FILL, blockPos);
             ActionManager.INSTANCE.setLook(action.getPlayerLook());
             HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
             HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);

@@ -8,7 +8,6 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
-import me.aleksilassila.litematica.printer.render.WorkTargetHighlighter;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
@@ -193,7 +192,6 @@ public class MineHandler extends ClientPlayerTickHandler {
     private boolean handleMineResult(BlockPos blockPos, BlockBreakResult result) {
         return switch (result) {
             case COMPLETED -> {
-                WorkTargetHighlighter.record(HudStatsManager.Mode.MINE, blockPos);
                 HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
                 this.retryTargets.remove(blockPos);
                 HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.MINE, 1);
@@ -201,7 +199,6 @@ public class MineHandler extends ClientPlayerTickHandler {
                 yield true;
             }
             case COMPLETED_WAIT, IN_PROGRESS, ABORTED -> {
-                WorkTargetHighlighter.record(HudStatsManager.Mode.MINE, blockPos);
                 HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
                 this.enqueueRetryTarget(blockPos);
                 if (result == BlockBreakResult.COMPLETED_WAIT) {

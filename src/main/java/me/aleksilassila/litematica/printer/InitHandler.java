@@ -7,8 +7,6 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.printer.zxy.utils.HighlightBlockRenderer;
-import me.aleksilassila.litematica.printer.render.InventorySchematicHighlighter;
-import me.aleksilassila.litematica.printer.render.WorkTargetHighlighter;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.mods.BedrockUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
@@ -35,8 +33,6 @@ public class InitHandler implements IInitializationHandler {
         initModConfig();
         initConfigCallback();
         HighlightBlockRenderer.init();  // 高亮显示方块渲染器
-        InventorySchematicHighlighter.init();
-        WorkTargetHighlighter.init();
     }
 
     private void initConfigCallback() {
@@ -80,8 +76,6 @@ public class InitHandler implements IInitializationHandler {
 
         // 特殊设置时，自动刷新界面
         Core.WORK_MODE.setValueChangeCallback(b -> ConfigUi.refresh());
-        Core.RENDER_WORK_TARGETS.setValueChangeCallback(b -> ConfigUi.refresh());
-        Print.INVENTORY_SCHEMATIC_HIGHLIGHT.setValueChangeCallback(b -> ConfigUi.refresh());
         Print.FILL_COMPOSTER.setValueChangeCallback(b -> ConfigUi.refresh());
         Break.BREAK_LIMITER.setValueChangeCallback(b -> ConfigUi.refresh());
         Break.BREAK_LIMIT.setValueChangeCallback(b -> ConfigUi.refresh());

@@ -7,8 +7,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.*;
 import me.aleksilassila.litematica.printer.mixin.MinecraftAccessor;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
-import me.aleksilassila.litematica.printer.render.InventorySchematicHighlighter;
-import me.aleksilassila.litematica.printer.render.WorkTargetHighlighter;
+import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.client.Minecraft;
 
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
@@ -37,9 +36,6 @@ public class ClientPlayerTickManager {
     );
 
     public static void tick() {
-        long currentTick = getCurrentHandlerTime();
-        InventorySchematicHighlighter.tick(currentTick);
-        WorkTargetHighlighter.tick(currentTick);
         if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
             HudStatsManager.INSTANCE.resetAll();
             lastPauseReason = null;

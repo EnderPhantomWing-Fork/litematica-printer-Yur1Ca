@@ -3,7 +3,6 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
-import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockDebugLog;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEnvironment;
@@ -13,7 +12,6 @@ import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTorch
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockTargetBlocks;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
-import me.aleksilassila.litematica.printer.render.WorkTargetHighlighter;
 import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.core.BlockPos;
@@ -157,7 +155,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         boolean submitted = BedrockController.submit(blockPos);
         setIterationConsumedEffectiveExecution(submitted);
         if (submitted) {
-            WorkTargetHighlighter.record(HudStatsManager.Mode.BEDROCK, blockPos);
             // Allow a second same-tick submit when the controller still has safe capacity.
             skipIteration.set(!BedrockController.canScanForTargets());
         }
