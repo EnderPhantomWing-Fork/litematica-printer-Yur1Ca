@@ -23,17 +23,18 @@ import java.util.Map;
 
 public final class BedrockPlacer {
     private static final Minecraft CLIENT = Minecraft.getInstance();
-    private static float lastYaw;
-    private static float lastPitch;
-    private static float lastYawOld;
-    private static float lastPitchOld;
-    private static float lastHeadYaw;
-    private static float lastHeadYawOld;
-    private static float lastBodyYaw;
-    private static float lastBodyYawOld;
     private static final Map<BlockPos, PendingHorizontalPlacement> pendingHorizontalPistonPlacements = new HashMap<>();
 
     private BedrockPlacer() {
+    }
+
+    public static void clearHorizontalLookState() {
+        pendingHorizontalPistonPlacements.clear();
+        NetworkUtils.clearScopedLookOverride();
+    }
+
+    public static boolean hasPendingHorizontalLook(BlockPos pistonPos) {
+        return pistonPos != null && pendingHorizontalPistonPlacements.containsKey(pistonPos.immutable());
     }
 
     public static boolean placeSimple(BlockPos supportPos, Direction clickedFace, Item item) {
@@ -51,13 +52,10 @@ public final class BedrockPlacer {
             return false;
         }
         PlayerLook look = new PlayerLook(clickedFace.getOpposite());
-        rememberLook(player);
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
-        syncLocalLook(player, look.getYaw(), look.getPitch());
         // Use center of the support block for more reliable interaction
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(supportPos), clickedFace, supportPos, false);
         placeBlockAggressively(player, hitResult, true);
-        restoreLook(player);
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("placeSimple support=" + BedrockDebugLog.pos(supportPos)
                     + " face=" + clickedFace
@@ -89,12 +87,14 @@ public final class BedrockPlacer {
     public static boolean placePiston(BlockPos pistonPos, Direction facing, BlockPos... preferredAnchors) {
         LocalPlayer player = CLIENT.player;
         if (player == null || CLIENT.gameMode == null) {
+            NetworkUtils.clearScopedLookOverride();
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=no_player_or_gamemode");
             }
             return false;
         }
         if (!BedrockInventory.switchToOffhand(Blocks.PISTON.asItem())) {
+            NetworkUtils.clearScopedLookOverride();
             if (BedrockDebugLog.isEnabled()) {
                 BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=missing_piston");
             }
@@ -126,7 +126,7 @@ public final class BedrockPlacer {
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(clickedPos), clickedFace, clickedPos, false);
 
         placeBlockAggressively(player, hitResult, false);
-        restoreLook(player);
+        NetworkUtils.clearScopedLookOverride();
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("placePiston piston=" + BedrockDebugLog.pos(pistonPos)
                     + " facing=" + facing
@@ -164,11 +164,13 @@ public final class BedrockPlacer {
         BlockPos pendingKey = pistonPos.immutable();
         if (!lookDirection.getAxis().isHorizontal()) {
             pendingHorizontalPistonPlacements.remove(pendingKey);
+            NetworkUtils.clearScopedLookOverride();
             return false;
         }
 
         PendingHorizontalPlacement pendingPlacement = pendingHorizontalPistonPlacements.get(pendingKey);
         if (pendingPlacement != null && facing == pendingPlacement.facing()) {
+            NetworkUtils.setScopedLookOverride(look);
             if (!isHorizontalLookReady(pendingPlacement)) {
                 return true;
             }
@@ -181,6 +183,7 @@ public final class BedrockPlacer {
         long sentTick = ClientPlayerTickManager.getCurrentHandlerTime();
         int packetEpoch = ClientPlayerTickManager.getPacketEpoch();
         pendingHorizontalPistonPlacements.put(pendingKey, new PendingHorizontalPlacement(facing, sentTick, packetEpoch));
+        NetworkUtils.setScopedLookOverride(look);
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
         if (BedrockDebugLog.isEnabled()) {
             BedrockDebugLog.write("preparePistonLook deferred piston=" + BedrockDebugLog.pos(pistonPos)
@@ -204,45 +207,7 @@ public final class BedrockPlacer {
     }
 
     private static void applyPlacementLook(LocalPlayer player, PlayerLook look) {
-        rememberLook(player);
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
-        syncLocalLook(player, look.getYaw(), look.getPitch());
-    }
-
-    private static void rememberLook(LocalPlayer player) {
-        lastYaw = player.getYRot();
-        lastPitch = player.getXRot();
-        lastYawOld = player.yRotO;
-        lastPitchOld = player.xRotO;
-        lastHeadYaw = player.yHeadRot;
-        lastHeadYawOld = player.yHeadRotO;
-        lastBodyYaw = player.yBodyRot;
-        lastBodyYawOld = player.yBodyRotO;
-    }
-
-    private static void syncLocalLook(LocalPlayer player, float yaw, float pitch) {
-        player.setYRot(yaw);
-        player.yRotO = yaw;
-        player.setYHeadRot(yaw);
-        player.yHeadRotO = yaw;
-        player.yBodyRot = yaw;
-        player.yBodyRotO = yaw;
-        player.setXRot(pitch);
-        player.xRotO = pitch;
-    }
-
-    private static void restoreLook(LocalPlayer player) {
-        player.setYRot(lastYaw);
-        player.yRotO = lastYawOld;
-        player.setYHeadRot(lastHeadYaw);
-        player.yHeadRotO = lastHeadYawOld;
-        player.yBodyRot = lastBodyYaw;
-        player.yBodyRotO = lastBodyYawOld;
-        player.setXRot(lastPitch);
-        player.xRotO = lastPitchOld;
-        // Keep the server on the placement look until its use-item packet has been
-        // processed; restoring the server-side look immediately can race horizontal
-        // piston placement and make the piston pick the player's real camera yaw.
     }
 
     private record PendingHorizontalPlacement(Direction facing, long sentTick, int packetEpoch) {

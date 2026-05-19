@@ -44,11 +44,13 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean canExecute() {
         if (player.isCreative()) {
+            BedrockController.clearHorizontalLookState();
             MessageUtils.setOverlayMessage(I18n.BEDROCK_CREATIVE_MODE.getName());
             return false;
         }
         String warning = BedrockInventory.warningMessage();
         if (warning != null) {
+            BedrockController.clearHorizontalLookState();
             MessageUtils.setOverlayMessage(me.aleksilassila.litematica.printer.utils.minecraft.StringUtils.translatable(warning));
             return false;
         }
@@ -70,6 +72,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
         PrinterBox scanBox = snapshotIterationBox(playerInteractionBox);
         List<CandidateInfo> candidates = new ArrayList<>();
+        boolean sideCandidatesOnly = BedrockController.shouldOnlySubmitSideCandidates();
         for (BlockPos pos : scanBox) {
             if (pos == null || !BedrockEnvironment.canInteract(pos)) {
                 continue;
@@ -83,7 +86,11 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             if (BedrockController.isPositionOnRetryCooldown(pos)) {
                 continue;
             }
-            candidates.add(buildCandidate(pos.immutable()));
+            CandidateInfo candidate = buildCandidate(pos.immutable());
+            if (sideCandidatesOnly && (candidate.layout() == null || !candidate.layout().isHorizontal())) {
+                continue;
+            }
+            candidates.add(candidate);
         }
 
         logIsolatedCandidateSummary(candidates);

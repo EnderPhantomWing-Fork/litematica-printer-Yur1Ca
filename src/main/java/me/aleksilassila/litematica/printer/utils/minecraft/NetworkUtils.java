@@ -12,6 +12,7 @@ public class NetworkUtils {
 
     private static final Minecraft client = Minecraft.getInstance();
     private static final ThreadLocal<Boolean> BYPASS_QUEUED_LOOK_OVERRIDE = ThreadLocal.withInitial(() -> false);
+    private static PlayerLook scopedLookOverride;
 
     public static void sendPacket(Packet<?> packet) {
         ClientPacketListener connection = client.getConnection();
@@ -58,6 +59,18 @@ public class NetworkUtils {
 
     public static boolean shouldBypassQueuedLookOverride() {
         return BYPASS_QUEUED_LOOK_OVERRIDE.get();
+    }
+
+    public static void setScopedLookOverride(PlayerLook playerLook) {
+        scopedLookOverride = playerLook;
+    }
+
+    public static void clearScopedLookOverride() {
+        scopedLookOverride = null;
+    }
+
+    public static PlayerLook getScopedLookOverride() {
+        return scopedLookOverride;
     }
 
     public interface SequenceExtension {

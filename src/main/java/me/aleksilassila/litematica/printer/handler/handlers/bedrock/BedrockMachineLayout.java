@@ -140,6 +140,10 @@ public final class BedrockMachineLayout {
         return this.pistonOffset;
     }
 
+    public boolean isHorizontal() {
+        return this.pistonOffset.getAxis().isHorizontal();
+    }
+
     public BlockPos getPistonPos() {
         return this.pistonPos;
     }

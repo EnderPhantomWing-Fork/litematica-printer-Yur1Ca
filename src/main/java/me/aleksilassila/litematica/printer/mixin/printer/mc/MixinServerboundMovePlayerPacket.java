@@ -19,6 +19,10 @@ public class MixinServerboundMovePlayerPacket {
         if (NetworkUtils.shouldBypassQueuedLookOverride()) {
             return yaw;
         }
+        PlayerLook scopedLook = NetworkUtils.getScopedLookOverride();
+        if (scopedLook != null) {
+            return scopedLook.yaw;
+        }
         PlayerLook playerLook = ActionManager.INSTANCE.look;
         if (playerLook != null) {
             return playerLook.yaw;
@@ -34,6 +38,10 @@ public class MixinServerboundMovePlayerPacket {
     private static float modifyLookPitch(float pitch) {
         if (NetworkUtils.shouldBypassQueuedLookOverride()) {
             return pitch;
+        }
+        PlayerLook scopedLook = NetworkUtils.getScopedLookOverride();
+        if (scopedLook != null) {
+            return scopedLook.pitch;
         }
         PlayerLook playerLook = ActionManager.INSTANCE.look;
         if (playerLook != null) {

@@ -31,7 +31,7 @@ public final class BedrockController {
     private static final int SUBMIT_RETRY_COOLDOWN_TICKS = 6;
     private static final int MACHINE_OVERLAP_RETRY_COOLDOWN_TICKS = 4;
     private static final int STARTUP_EXPOSURE_RETRY_COOLDOWN_TICKS = 4;
-    private static final int MAX_VERTICAL_EXPOSURE_DEFERS = 4;
+    private static final int MAX_VERTICAL_EXPOSURE_DEFERS = 1;
     private static final int FAILURE_RETRY_COOLDOWN_TICKS = 12;
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
@@ -76,6 +76,7 @@ public final class BedrockController {
         EXPOSURE_DEFERRALS.clear();
         EXPOSURE_BYPASS_USES.clear();
         SUBMISSION_PLANS.clear();
+        BedrockPlacer.clearHorizontalLookState();
         nextAcceptTick = 0L;
         nextExecuteTick = 0L;
         lastProcessedTick = Long.MIN_VALUE;
@@ -92,6 +93,10 @@ public final class BedrockController {
         lastLoggedBreakThroughput = Integer.MIN_VALUE;
         lastLoggedBedrockInterval = Integer.MIN_VALUE;
         HudStatsManager.INSTANCE.resetMode(HudStatsManager.Mode.BEDROCK);
+    }
+
+    public static void clearHorizontalLookState() {
+        BedrockPlacer.clearHorizontalLookState();
     }
 
     public static void tick() {
@@ -136,8 +141,8 @@ public final class BedrockController {
                     + " now=" + now);
         }
         Set<BedrockTarget> processedTargets = new LinkedHashSet<>();
-        executeBudget = processTargets(level, executeBudget, true, processedTargets);
-        executeBudget = processTargets(level, executeBudget, false, processedTargets);
+        executeBudget = processTargets(level, executeBudget, true, processedTargets, findSideLookTarget());
+        executeBudget = processTargets(level, executeBudget, false, processedTargets, findSideLookTarget());
 
         if (executeBudget < initialExecuteBudget) {
             scheduleNextExecuteWindow();
@@ -230,6 +235,10 @@ public final class BedrockController {
             return false;
         }
         return getSchedulingPenalty(pos) >= HOTSPOT_SKIP_PENALTY;
+    }
+
+    public static boolean shouldOnlySubmitSideCandidates() {
+        return countActiveTargets() >= getActiveTargetCap() && !hasSideExclusiveTarget();
     }
 
     public static boolean submit(BlockPos pos) {
@@ -499,12 +508,15 @@ public final class BedrockController {
         return false;
     }
 
-    private static int processTargets(ClientLevel level, int executeBudget, boolean priorityOnly, Set<BedrockTarget> processedTargets) {
+    private static int processTargets(ClientLevel level, int executeBudget, boolean priorityOnly, Set<BedrockTarget> processedTargets, BedrockTarget sideLookTarget) {
         Iterator<BedrockTarget> iterator = TARGETS.iterator();
         while (iterator.hasNext()) {
             BedrockTarget target = iterator.next();
             if (target == null) {
                 iterator.remove();
+                continue;
+            }
+            if (sideLookTarget != null && target != sideLookTarget) {
                 continue;
             }
             if (processedTargets.contains(target)) {
@@ -574,6 +586,8 @@ public final class BedrockController {
                     || status == BedrockTarget.Status.STUCK
                     || retireOnSuccessfulRetracting) {
                 cleanupTarget(iterator, target, null);
+            } else if (target.isHorizontalLayout() && BedrockPlacer.hasPendingHorizontalLook(target.getPistonPos())) {
+                break;
             }
         }
         return executeBudget;
@@ -603,6 +617,9 @@ public final class BedrockController {
                     + " cleanupCount=" + target.getCleanupPositions().size()
                     + (reason == null ? "" : " reason=" + reason));
         }
+        if (target.isHorizontalLayout()) {
+            BedrockPlacer.clearHorizontalLookState();
+        }
         iterator.remove();
         for (BlockPos tempPos : target.getCleanupPositions()) {
             cleanupBlockOrQueue(tempPos, false);
@@ -617,6 +634,28 @@ public final class BedrockController {
             }
         }
         return count;
+    }
+
+    private static BedrockTarget findSideExclusiveTarget() {
+        for (BedrockTarget target : TARGETS) {
+            if (target != null && target.isHorizontalLayout()) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasSideExclusiveTarget() {
+        return findSideExclusiveTarget() != null;
+    }
+
+    private static BedrockTarget findSideLookTarget() {
+        for (BedrockTarget target : TARGETS) {
+            if (target != null && target.isHorizontalLayout() && BedrockPlacer.hasPendingHorizontalLook(target.getPistonPos())) {
+                return target;
+            }
+        }
+        return null;
     }
 
     private static int getActiveTargetCap() {
@@ -1041,7 +1080,7 @@ public final class BedrockController {
             return AcceptProbe.reject("submit_cap");
         }
         if (countActiveTargets() >= getActiveTargetCap()) {
-            return AcceptProbe.reject("active_cap");
+            return hasSideExclusiveTarget() ? AcceptProbe.reject("active_cap") : AcceptProbe.accept();
         }
         return AcceptProbe.accept();
     }
@@ -1058,7 +1097,10 @@ public final class BedrockController {
         if (isTargetOnRetryCooldown(stablePos)) {
             return AcceptProbe.reject("retry_cooldown");
         }
-        if (countActiveTargets() >= getActiveTargetCap()) {
+        if (isHorizontalSubmission(stablePos) && hasSideExclusiveTarget()) {
+            return AcceptProbe.reject("side_lane_busy");
+        }
+        if (countActiveTargets() >= getActiveTargetCap() && !canBypassActiveCapForSide(stablePos)) {
             return AcceptProbe.reject("active_cap");
         }
         if (isReservedByActiveTarget(stablePos)) {
@@ -1105,6 +1147,26 @@ public final class BedrockController {
 
     private static BlockPos stablePos(BlockPos pos) {
         return pos == null ? null : pos.immutable();
+    }
+
+    private static boolean canBypassActiveCapForSide(BlockPos pos) {
+        SubmissionPlan plan = SUBMISSION_PLANS.get(pos);
+        return plan != null
+                && plan.layout() != null
+                && plan.layout().isHorizontal()
+                && !hasSideExclusiveTarget();
+    }
+
+    private static boolean isHorizontalSubmission(BlockPos pos) {
+        SubmissionPlan plan = SUBMISSION_PLANS.get(pos);
+        if (plan != null && plan.layout() != null) {
+            return plan.layout().isHorizontal();
+        }
+        if (CLIENT.level == null || pos == null) {
+            return false;
+        }
+        BedrockMachineLayout layout = BedrockMachineLayout.find(CLIENT.level, pos);
+        return layout != null && layout.isHorizontal();
     }
 
     public static void clearSubmissionPlans() {

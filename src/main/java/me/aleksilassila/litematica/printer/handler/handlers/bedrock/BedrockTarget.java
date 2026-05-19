@@ -141,6 +141,10 @@ public class BedrockTarget {
         return this.conservativeSync;
     }
 
+    public boolean isHorizontalLayout() {
+        return this.layout != null && this.layout.isHorizontal();
+    }
+
     public Status tick() {
         return this.tick(true, true);
     }
