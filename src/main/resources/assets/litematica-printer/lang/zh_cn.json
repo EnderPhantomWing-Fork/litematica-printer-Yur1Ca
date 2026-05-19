@@ -139,7 +139,7 @@
   "litematica-printer.config.placeInAir": "凭空放置",
   "litematica-printer.config.placeInAir.desc": "无视方块支撑要求，直接在空位置放置方块(适用于无支撑的装饰性方块)。",
   "litematica-printer.config.tweakerooAngelBlockMayBuild": "放宽 Tweakeroo 凭空放置限制",
-"litematica-printer.config.tweakerooAngelBlockMayBuild.desc": "启用后，可以通过 Tweakeroo 的凭空放置创造模式判断，在生存下可以使用。\\n关闭后保持 Tweakeroo 原本仅创造模式通过的行为。",
+"litematica-printer.config.tweakerooAngelBlockMayBuild.desc": "启用后，可以通过 Tweakeroo 的凭空放置创造模式判断，在生存下可以使用。\n关闭后保持 Tweakeroo 原本仅创造模式通过的行为。",
   "litematica-printer.config.printSortSides": "智能放置面排序",
   "litematica-printer.config.printSortSides.desc": "启用后，会优先选择更靠近玩家视角、通常更容易点到的放置面。",
   "litematica-printer.config.printSortTargets": "智能打印目标排序",
