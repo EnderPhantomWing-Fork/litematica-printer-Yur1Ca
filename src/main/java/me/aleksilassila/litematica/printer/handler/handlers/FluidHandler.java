@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+import me.aleksilassila.litematica.printer.render.WorkTargetHighlighter;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import net.minecraft.core.BlockPos;
@@ -97,6 +98,7 @@ public class FluidHandler extends ClientPlayerTickHandler {
                 return;
             }
             new Action().queueAction(blockPos, Direction.UP, false, player);
+            WorkTargetHighlighter.record(HudStatsManager.Mode.FLUID, blockPos);
             HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, level.getBlockState(blockPos));
             HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
             if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
