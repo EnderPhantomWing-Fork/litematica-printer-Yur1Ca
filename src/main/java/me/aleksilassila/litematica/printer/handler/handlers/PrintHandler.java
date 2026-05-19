@@ -164,13 +164,19 @@ public class PrintHandler extends ClientPlayerTickHandler {
         ActionManager.INSTANCE.setLook(playerLook);
         HudStatsManager.INSTANCE.trackExpectedBlockState(HudStatsManager.Mode.PRINT, blockPos, ctx.requiredState);
         HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
+        if (!action.isConsumeEffectiveExecution()) {
+            setIterationConsumedEffectiveExecution(false);
+        }
         if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");
             skipIteration.set(true);
         } else {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
         }
-        setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+        int cooldownTicks = action.getCooldownTicksOverride() >= 0
+                ? action.getCooldownTicksOverride()
+                : ConfigUtils.getPlaceCooldown();
+        setBlockPosCooldown(blockPos, cooldownTicks);
     }
 
     private void fillSortedTargetQueue(PrinterBox playerInteractionBox, WorldSchematic schematic) {

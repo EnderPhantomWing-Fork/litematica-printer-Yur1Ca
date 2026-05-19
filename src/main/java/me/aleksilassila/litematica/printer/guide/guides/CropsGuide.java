@@ -73,7 +73,11 @@ public class CropsGuide extends Guide {
             int requiredAge = getProperty(requiredState, ageProp).orElse(0);
             int currentAge = getProperty(currentState, ageProp).orElse(0);
             if (requiredAge == maxAge && currentAge < maxAge) {
-                return Result.success(new ClickAction().setItem(Items.BONE_MEAL));
+                return Result.success(new ClickAction()
+                        .setItem(Items.BONE_MEAL)
+                        .setConsumeEffectiveExecution(false)
+                        .setClickRepeatCount(Configs.Print.BONEMEAL_CROPS_CLICKS.getIntegerValue())
+                        .setCooldownTicksOverride(1));
             }
         }
         return Result.SKIP;

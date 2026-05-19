@@ -43,6 +43,12 @@ public class Action {
     @Getter
     @Nullable
     protected Boolean shift = null;
+    @Getter
+    protected boolean consumeEffectiveExecution = true;
+    @Getter
+    protected int cooldownTicksOverride = -1;
+    @Getter
+    protected int clickRepeatCount = 1;
 
     public Action() {
         this.sides = createDefaultSides();
@@ -184,6 +190,21 @@ public class Action {
 
     public Action setShift() {
         return this.setShift(true);
+    }
+
+    public Action setConsumeEffectiveExecution(boolean consumeEffectiveExecution) {
+        this.consumeEffectiveExecution = consumeEffectiveExecution;
+        return this;
+    }
+
+    public Action setCooldownTicksOverride(int cooldownTicksOverride) {
+        this.cooldownTicksOverride = cooldownTicksOverride;
+        return this;
+    }
+
+    public Action setClickRepeatCount(int clickRepeatCount) {
+        this.clickRepeatCount = Math.max(1, clickRepeatCount);
+        return this;
     }
 
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {

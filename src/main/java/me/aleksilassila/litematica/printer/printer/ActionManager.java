@@ -34,6 +34,7 @@ public class ActionManager {
     public Vec3 hitModifier;
     public boolean useShift = false;
     public boolean useProtocol = false;
+    public int clickRepeatCount = 1;
     @Setter
     @Nullable
     public PlayerLook look;
@@ -44,6 +45,10 @@ public class ActionManager {
     }
 
     public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift) {
+        this.queueClick(target, side, hitModifier, useShift, 1);
+    }
+
+    public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount) {
         if (Configs.Placement.PLACE_INTERVAL.getIntegerValue() != 0) {
             if (this.target != null) {
                 System.out.println("Was not ready yet.");
@@ -54,6 +59,7 @@ public class ActionManager {
         this.side = side;
         this.hitModifier = hitModifier;
         this.useShift = useShift;
+        this.clickRepeatCount = Math.max(1, clickRepeatCount);
     }
 
     public ActionManager sendQueue(LocalPlayer player) {
@@ -108,7 +114,9 @@ public class ActionManager {
         if (gameModeExtension != null) {
             boolean localPrediction = !Configs.Placement.PRINT_USE_PACKET.getBooleanValue();
             BlockHitResult blockHitResult = new BlockHitResult(hitVec, side, target, false);
-            gameModeExtension.litematica_printer$useItemOn(localPrediction, InteractionHand.MAIN_HAND, blockHitResult);
+            for (int i = 0; i < this.clickRepeatCount; i++) {
+                gameModeExtension.litematica_printer$useItemOn(localPrediction, InteractionHand.MAIN_HAND, blockHitResult);
+            }
         }
         if (useShift && !wasSneak) {
             setShift(player, false);
@@ -140,6 +148,7 @@ public class ActionManager {
         this.hitModifier = null;
         this.useShift = false;
         this.useProtocol = false;
+        this.clickRepeatCount = 1;
         this.needWaitModifyLook = false;
         this.waitForHorizontalLook = true;
         this.look = null;

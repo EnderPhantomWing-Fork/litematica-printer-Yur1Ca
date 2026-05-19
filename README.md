@@ -3,11 +3,10 @@ Litematica Printer
 
 该模组为 投影 的 Minecraft Fabric 1.18.2 至 26.1 版本添加了自动建造功能。允许玩家通过自动放置周围正确方块来快速还原投影。
 
-这个版本基于[宅咸鱼二改版](https://github.com/zhaixianyu/litematica-printer)修改，添加了一些实用的功能。
+这个版本基于[炫白三改版](https://github.com/BiliXWhite/litematica-printer)修改，添加了一些实用的功能。
 
 如果你觉得好用，可以给该项目点个 Star ⭐️ 来以支持我。
 
-该分支始终保持开源免费，不会存在任何收费内容。当然条件允许的话可以给作者[买瓶脉动](https://ifdian.net/a/BlinkWhite)哦！
 
 下载
 ----------
@@ -82,7 +81,7 @@ Litematica Printer
 > 目前还没有官方的使用教程，但是大部分功能都含有注释可供参考使用。
 
 ## 未支持方块列表
-以下方块由于特殊原因暂未实现，打印机将自动跳过，亦或者是呈现错误的打印状态。如果发现其他方块放置错误，请尝试降低建造速度。若问题依旧存在，请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues)。
+以下方块由于特殊原因暂未实现，打印机将自动跳过，亦或者是呈现错误的打印状态。如果发现其他方块放置错误，请尝试降低建造速度。若问题依旧存在，请提交 [Issue](https://github.com/Yur1Ca/litematica-printer/issues)。
 - 头颅，告示牌，旗帜(以及具有16个朝向的任何方块)
 - 装有液体的炼药锅
 - 实体方块（包括但不限于物品展示框、盔甲架、画等等）
@@ -121,7 +120,7 @@ Litematica Printer
 
 1. 服务器装有反作弊插件，可能会导致打印机无法模拟看向放置。
 2. 打印机工作间隔设置过小，服务器无法及时响应，导致方块出现错误。属于正常现象，请尝试增大`打印机工作间隔`的值。
-3. 识别算法没有考虑到关于的方块，导致打印机不会正确处理。请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues/new?template=%E6%89%93%E5%8D%B0%E6%96%B9%E5%9D%97%E8%AF%B7%E6%B1%82.yml) ，表明什么方块出现错误。
+3. 识别算法没有考虑到关于的方块，导致打印机不会正确处理。请提交 [Issue](https://github.com/YUR1Ca/litematica-printer/issues/new?template=%E6%89%93%E5%8D%B0%E6%96%B9%E5%9D%97%E8%AF%B7%E6%B1%82.yml) ，表明什么方块出现错误。
 
 ### 快捷潜影盒功能无法使用？
 
@@ -130,7 +129,7 @@ Litematica Printer
 3. 预选栏位填满了潜影盒。须在Litematica设置中设置好`pickBlockableSlots`（快捷选择栏位）值。如图所示：
 ![预设位置](预设位置.png)
 
-快捷潜影盒仍处于测试阶段，可能会有一些问题，如果遇到问题请提交[Issue](https://github.com/BiliXWhite/litematica-printer/issues)。
+快捷潜影盒仍处于测试阶段，可能会有一些问题，如果遇到问题请提交[Issue](https://github.com/YUR1Ca/litematica-printer/issues)。
 
 
 感谢

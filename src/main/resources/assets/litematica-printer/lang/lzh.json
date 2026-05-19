@@ -291,5 +291,7 @@
   "litematica-printer.update.recommendation": "強薦升新章，以修潛藏之重弊。",
   "litematica-printer.update.repository": "典庫：",
   "litematica-printer.config.printBonemealCrops": "糞肥催熟",
-  "litematica-printer.config.printBonemealCrops.desc": "以骨粉催熟農作物。"
+  "litematica-printer.config.printBonemealCrops.desc": "以骨粉催熟農作物。",
+  "litematica-printer.config.printBonemealCropsClicks": "農作催熟連點數",
+  "litematica-printer.config.printBonemealCropsClicks.desc": "每治一作物，連施骨粉之數。\n數愈高則催熟愈疾，然骨粉之耗亦愈甚。"
 }

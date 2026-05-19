@@ -512,6 +512,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 农作物催熟连点次数
+        public static final ConfigInteger BONEMEAL_CROPS_CLICKS = integer("printBonemealCropsClicks")
+                .defaultValue(10)
+                .range(1, 32)
+                .setVisible(BONEMEAL_CROPS::getBooleanValue)
+                .build();
+
         // 破坏错误方块
         public static final ConfigBoolean BREAK_WRONG_BLOCK = bool("printBreakWrongBlock")
                 .defaultValue(false)
@@ -550,6 +557,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 FILL_COMPOSTER,
                 FILL_COMPOSTER_WHITELIST,
                 BONEMEAL_CROPS
+                , BONEMEAL_CROPS_CLICKS
         );
     }
 

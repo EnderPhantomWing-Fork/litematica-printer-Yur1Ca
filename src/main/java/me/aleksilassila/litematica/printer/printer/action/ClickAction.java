@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 public class ClickAction extends Action {
     @Override
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player) {
-        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().get(side), false);
+        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().get(side), false, this.clickRepeatCount);
         return this;
     }
 
