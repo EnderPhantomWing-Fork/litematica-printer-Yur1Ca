@@ -1,4 +1,4 @@
-name: release-single-version
+name: release-version-or-wrapper
 
 on:
   workflow_dispatch:
@@ -8,11 +8,12 @@ on:
         type: string
         required: true
       target_version:
-        description: Minecraft version to release
+        description: Minecraft version to release, or all for wrapper jar
         type: choice
         required: true
         default: 26.1
         options:
+          - all
           - 26.1
           - 1.21.11
           - 1.21.9
@@ -72,6 +73,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ./.gradle
+            ./libs
           key: ${{ runner.os }}-gradle-${{ inputs.target_version }}
           restore-keys: |
             ${{ runner.os }}-gradle-
@@ -80,14 +82,34 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build ${{ inputs.target_version }}
+        if: ${{ inputs.target_version != 'all' }}
         run: ./gradlew :${{ inputs.target_version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
         env:
           TARGET_MC_VERSIONS: ${{ inputs.target_version }}
 
-      - name: Upload jars to GitHub Release
+      - name: Build all versions wrapper
+        if: ${{ inputs.target_version == 'all' }}
+        run: ./gradlew :fabricWrapper:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+
+      - name: Delete wrapper sources jar
+        if: ${{ inputs.target_version == 'all' }}
+        run: |
+          find fabricWrapper/build/libs/ -name "*-sources.jar" -delete
+
+      - name: Upload single-version jars to GitHub Release
+        if: ${{ inputs.target_version != 'all' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.target_release_tag }}
           files: versions/${{ inputs.target_version }}/build/libs/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload wrapper jar to GitHub Release
+        if: ${{ inputs.target_version == 'all' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.target_release_tag }}
+          files: fabricWrapper/build/libs/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
