@@ -126,10 +126,6 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "下落方块无支撑");
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(ctx.requiredBlockName().getString()));
                 return;
-            } else if (level.getBlockState(downPos) != ctx.schematic.getBlockState(downPos)) {
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "支撑方块未就绪");
-                MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_MISMATCH.getName(ctx.requiredBlockName().getString()));
-                return;
             }
         }
         Direction side = action.getValidSide(level, blockPos);
