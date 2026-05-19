@@ -209,6 +209,9 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             penalty += BedrockController.getPredictedMachineOverlapPenalty(pos, layout, placement);
             return penalty;
         }
+        if (BedrockMachineLayout.shouldDeferUntilExposed(this.level, pos)) {
+            return controllerPenalty + 1_000;
+        }
         return controllerPenalty + 10_000;
     }
 

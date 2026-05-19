@@ -406,6 +406,7 @@ public class Render2D {
             case "retry_cooldown" -> "重试冷却";
             case "reserved_by_active_target" -> "被活跃任务占位";
             case "out_of_range_bedrock", "out_of_range_machine", "out_of_range" -> "超出交互范围";
+            case "await_target_exposure" -> "等待目标暴露";
             case "duplicate_active_target" -> "重复目标";
             case "occupied_by_active_piston" -> "活塞占位";
             case "pending_cleanup" -> "等待清理";
