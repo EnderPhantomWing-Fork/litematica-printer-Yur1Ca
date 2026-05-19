@@ -215,8 +215,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         Vec3 view = player.getLookAngle().normalize();
         return Comparator
                 .comparing((BlockPos pos) -> !isHoldingRequiredItem(schematic, heldItem, pos))
-                .thenComparingDouble(pos -> getViewAngleScore(eye, view, pos))
-                .thenComparingDouble(pos -> Vec3.atCenterOf(pos).distanceToSqr(eye));
+                .thenComparingDouble(pos -> Vec3.atCenterOf(pos).distanceToSqr(eye))
+                .thenComparingDouble(pos -> getViewAngleScore(eye, view, pos));
     }
 
     private static boolean isHoldingRequiredItem(WorldSchematic schematic, Item heldItem, BlockPos pos) {
