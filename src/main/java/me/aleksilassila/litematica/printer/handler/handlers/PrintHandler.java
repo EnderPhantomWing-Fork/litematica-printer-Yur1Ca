@@ -103,6 +103,9 @@ public class PrintHandler extends ClientPlayerTickHandler {
     public boolean canIterationBlockPos(BlockPos blockPos) {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
+        if (InteractionUtils.INSTANCE.isRecentlyBroken(blockPos)) {
+            return false;
+        }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
         if (Configs.Print.PRINT_SKIP.getBooleanValue()) {
             Set<String> skipSet = new HashSet<>(Configs.Print.PRINT_SKIP_LIST.getStrings()); // 转换为 HashSet

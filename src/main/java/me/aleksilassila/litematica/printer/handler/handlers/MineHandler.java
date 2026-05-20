@@ -8,19 +8,19 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
+import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
-import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayDeque;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST;
@@ -29,18 +29,29 @@ import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTR
 
 public class MineHandler extends ClientPlayerTickHandler {
     public static final String NAME = "mine";
-
-    private final ArrayDeque<BlockPos> retryQueue = new ArrayDeque<>();
-    private final Set<BlockPos> retryTargets = new HashSet<>();
-    private int preprocessEffectiveExecutions;
-    private int remainingMainScanExecutions;
+    private final MineBreakExecutor analyzer = new MineBreakExecutor();
+    private final List<MineBreakExecutor.Target> candidates = new ArrayList<>();
+    @Nullable
+    private BlockPos activeMinePos;
+    private int remainingInstantBudget;
+    private int toolSessionRemaining;
 
     public MineHandler() {
         super(NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
     }
 
+    @Override
+    public void tick() {
+        if (!ConfigUtils.isEnable() || !ConfigUtils.isMineMode()) {
+            this.analyzer.reset();
+            this.activeMinePos = null;
+            this.toolSessionRemaining = 0;
+        }
+        super.tick();
+    }
+
     public int getRetryQueueSize() {
-        return this.retryQueue.size();
+        return this.activeMinePos == null ? 0 : 1;
     }
 
     public static boolean mineRestriction(BlockState blockState) {
@@ -80,174 +91,295 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getMaxEffectiveExecutionsPerTick() {
-        return this.remainingMainScanExecutions;
+        return 0;
     }
 
     @Override
     protected void preprocess() {
-        this.preprocessEffectiveExecutions = 0;
+        this.candidates.clear();
         int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
-        this.remainingMainScanExecutions = configuredBudget == 0 ? -1 : configuredBudget;
-
-        if (this.level == null || this.player == null) {
-            this.retryQueue.clear();
-            this.retryTargets.clear();
-            return;
-        }
-
-        this.pruneRetryTargets();
-        this.processRetryTargets();
-
-        if (this.remainingMainScanExecutions > 0) {
-            this.remainingMainScanExecutions = Math.max(0, this.remainingMainScanExecutions - this.preprocessEffectiveExecutions);
-        }
+        this.remainingInstantBudget = configuredBudget == 0 ? -1 : configuredBudget;
+        this.continueActiveMineTarget();
     }
 
     @Override
     protected boolean canIterate() {
-        return this.remainingMainScanExecutions != 0;
+        return this.activeMinePos == null && !InteractionUtils.INSTANCE.hasActiveDestroyTarget();
     }
 
     @Override
     public boolean canIterationBlockPos(BlockPos pos) {
         return !CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)
+                && !InteractionUtils.INSTANCE.isRecentlyBroken(pos)
+                && !InteractionUtils.INSTANCE.isPendingDelayedDestroy(pos)
                 && InteractionUtils.canBreakBlock(pos)
                 && mineRestriction(level.getBlockState(pos));
     }
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        boolean consumed = this.handleMineAttempt(blockPos);
-        if (!consumed) {
+        MineBreakExecutor.Target target = this.analyzer.analyze(blockPos);
+        if (target == null) {
             this.setIterationConsumedEffectiveExecution(false);
+            return;
+        }
+        this.candidates.add(target);
+        this.setIterationConsumedEffectiveExecution(false);
+    }
+
+    @Override
+    protected void stopIteration(boolean interrupt) {
+        if (ActionManager.INSTANCE.needWaitModifyLook
+                || this.activeMinePos != null) {
+            return;
+        }
+        if (this.toolSessionRemaining > 0) {
+            if (this.executeCurrentToolFastBatch(-1)) {
+                return;
+            }
+            MineBreakExecutor.Target currentToolContinuousCandidate = this.selectCurrentToolContinuousCandidate();
+            if (currentToolContinuousCandidate != null) {
+                this.startContinuous(currentToolContinuousCandidate, false);
+                return;
+            }
+            this.toolSessionRemaining = 0;
+        }
+
+        MineBreakExecutor.Target switchToolInstantCandidate = this.selectSwitchToolInstantCandidate();
+        boolean currentToolFastExecuted = this.executeCurrentToolFastBatch(this.getCurrentToolFastBudget(switchToolInstantCandidate != null));
+        if (this.activeMinePos != null) {
+            return;
+        }
+        if (switchToolInstantCandidate != null && this.executeSwitchedToolFastBatch(switchToolInstantCandidate)) {
+            return;
+        }
+        if (currentToolFastExecuted) {
+            return;
+        }
+        MineBreakExecutor.Target currentToolContinuousCandidate = this.selectCurrentToolContinuousCandidate();
+        MineBreakExecutor.Target switchToolContinuousCandidate = this.selectSwitchToolContinuousCandidate();
+        if (currentToolContinuousCandidate != null && switchToolContinuousCandidate != null) {
+            this.startContinuous(switchToolContinuousCandidate, true);
+            return;
+        }
+        if (currentToolContinuousCandidate != null) {
+            this.startContinuous(currentToolContinuousCandidate, false);
+            return;
+        }
+        if (switchToolContinuousCandidate != null) {
+            this.startContinuous(switchToolContinuousCandidate, true);
         }
     }
 
-    private void processRetryTargets() {
-        int retryBudget = this.getRetryBudget();
-        if (retryBudget <= 0 || this.retryQueue.isEmpty()) {
+    private void startContinuous(MineBreakExecutor.Target target, boolean allowToolSwitch) {
+        BlockBreakResult result = this.executeMineTarget(target, allowToolSwitch);
+        this.startToolSessionIfUseful(result);
+        this.handleMineResult(target.pos(), result);
+        this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
+    }
+
+    private void continueActiveMineTarget() {
+        BlockPos pos = this.activeMinePos;
+        if (pos == null) {
             return;
         }
+        if (!this.canContinueActiveMineTarget(pos)) {
+            this.activeMinePos = null;
+            return;
+        }
+        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(pos, Direction.DOWN, false);
+        this.handleMineResult(pos, result);
+        if (result != BlockBreakResult.IN_PROGRESS) {
+            this.activeMinePos = null;
+            this.setBlockPosCooldown(pos, ConfigUtils.getBreakCooldown());
+        }
+    }
 
-        int available = this.retryQueue.size();
-        while (available-- > 0 && this.preprocessEffectiveExecutions < retryBudget) {
-            BlockPos pos = this.pollRetryTarget();
-            if (pos == null) {
+    private boolean canContinueActiveMineTarget(BlockPos pos) {
+        return pos != null
+                && this.canReachIterationPosition(pos)
+                && InteractionUtils.canBreakBlock(pos)
+                && mineRestriction(this.level.getBlockState(pos));
+    }
+
+    private BlockBreakResult executeMineTarget(MineBreakExecutor.Target target, boolean allowToolSwitch) {
+        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(target.pos(), Direction.DOWN, allowToolSwitch);
+        if (result == BlockBreakResult.IN_PROGRESS) {
+            this.activeMinePos = target.pos();
+        }
+        return result;
+    }
+
+    private boolean executeCurrentToolFastBatch(int maxActions) {
+        boolean executed = false;
+        for (MineBreakExecutor.Target target : this.candidates) {
+            if (!this.hasInstantBudget() || maxActions == 0) {
                 break;
             }
-            if (!this.canRetryTarget(pos)) {
+            if (!this.analyzer.isInstantWithCurrentTool(target)) {
                 continue;
             }
-            if (this.handleMineAttempt(pos)) {
-                this.preprocessEffectiveExecutions++;
+            BlockBreakResult result = this.executeMineTarget(target, false);
+            this.consumeInstantBudget();
+            this.handleMineResult(target.pos(), result);
+            this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
+            executed = true;
+            this.consumeToolSessionAction();
+            if (maxActions > 0) {
+                maxActions--;
+            }
+            if (result == BlockBreakResult.IN_PROGRESS || this.activeMinePos != null) {
+                break;
+            }
+        }
+        return executed;
+    }
+
+    private boolean executeSwitchedToolFastBatch(MineBreakExecutor.Target firstTarget) {
+        if (!this.hasInstantBudget()) {
+            return false;
+        }
+        BlockBreakResult result = this.executeMineTarget(firstTarget, true);
+        this.consumeInstantBudget();
+        this.startToolSessionIfUseful(result);
+        this.handleMineResult(firstTarget.pos(), result);
+        this.setBlockPosCooldown(firstTarget.pos(), ConfigUtils.getBreakCooldown());
+        if (result == BlockBreakResult.IN_PROGRESS || this.activeMinePos != null) {
+            return true;
+        }
+        this.executeCurrentToolFastBatchFromFreshAnalysis(firstTarget.pos());
+        return true;
+    }
+
+    private void executeCurrentToolFastBatchFromFreshAnalysis(BlockPos skippedPos) {
+        for (MineBreakExecutor.Target candidate : this.candidates) {
+            if (!this.hasInstantBudget()) {
+                break;
+            }
+            if (candidate.pos().equals(skippedPos)) {
+                continue;
+            }
+            MineBreakExecutor.Target target = this.analyzer.analyze(candidate.pos());
+            if (target == null || !this.analyzer.isInstantWithCurrentTool(target)) {
+                continue;
+            }
+            BlockBreakResult result = this.executeMineTarget(target, false);
+            this.consumeInstantBudget();
+            this.consumeToolSessionAction();
+            this.handleMineResult(target.pos(), result);
+            this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
+            if (result == BlockBreakResult.IN_PROGRESS || this.activeMinePos != null) {
+                break;
             }
         }
     }
 
-    private int getRetryBudget() {
-        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
-        if (configuredBudget < 0) {
+    private int getCurrentToolFastBudget(boolean reserveForSwitchTool) {
+        if (!reserveForSwitchTool || this.remainingInstantBudget < 0) {
             return -1;
         }
-        if (configuredBudget == 0) {
-            return this.retryQueue.size();
+        if (this.remainingInstantBudget <= 1) {
+            return this.remainingInstantBudget;
         }
-        int preferredBudget = Math.max(1, configuredBudget / 2);
-        int maxRetryBudget = configuredBudget > 1 ? configuredBudget - 1 : configuredBudget;
-        return Math.min(this.retryQueue.size(), Math.min(preferredBudget, maxRetryBudget));
+        return Math.max(1, this.remainingInstantBudget / 2);
     }
 
-    private boolean canRetryTarget(BlockPos pos) {
-        if (this.level == null || this.player == null || pos == null) {
-            return false;
-        }
-        if (!this.canReachIterationPosition(pos)) {
-            return false;
-        }
-        if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
-            return false;
-        }
-        if (!ConfigUtils.isPositionInSelectionRange(this.player, pos, Configs.Mine.MINE_SELECTION_TYPE)) {
-            return false;
-        }
-        return this.canIterationBlockPos(pos);
+    private void startToolSession() {
+        this.toolSessionRemaining = Math.max(this.toolSessionRemaining, this.getToolSessionQuota());
     }
 
-    private void pruneRetryTargets() {
-        Iterator<BlockPos> iterator = this.retryQueue.iterator();
-        while (iterator.hasNext()) {
-            BlockPos pos = iterator.next();
-            if (!this.canRetryTarget(pos)) {
-                iterator.remove();
-                this.retryTargets.remove(pos);
-            }
+    private void startToolSessionIfUseful(BlockBreakResult result) {
+        if (result == BlockBreakResult.IN_PROGRESS || result == BlockBreakResult.COMPLETED_WAIT) {
+            this.startToolSession();
+            this.consumeToolSessionAction();
         }
     }
 
-    private boolean handleMineAttempt(BlockPos blockPos) {
-        BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(blockPos);
-        return this.handleMineResult(blockPos, result);
-    }
-
-    private boolean handleMineResult(BlockPos blockPos, BlockBreakResult result) {
-        return switch (result) {
-            case COMPLETED -> {
-                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
-                this.retryTargets.remove(blockPos);
-                HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.MINE, 1);
-                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "运行中");
-                yield true;
-            }
-            case COMPLETED_WAIT, IN_PROGRESS, ABORTED -> {
-                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
-                this.enqueueRetryTarget(blockPos);
-                if (result == BlockBreakResult.COMPLETED_WAIT) {
-                    HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "等待服务端确认");
-                } else if (result == BlockBreakResult.IN_PROGRESS) {
-                    HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "破坏中");
-                } else {
-                    HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "挖掘中断");
-                }
-                yield true;
-            }
-            case FAILED -> {
-                this.retryTargets.remove(blockPos);
-                HudStatsManager.INSTANCE.recordFailure(HudStatsManager.Mode.MINE, "破坏失败");
-                yield false;
-            }
-        };
-    }
-
-    private void enqueueRetryTarget(BlockPos pos) {
-        if (pos == null || this.retryTargets.contains(pos)) {
-            return;
-        }
-        BlockPos immutablePos = pos.immutable();
-        this.retryQueue.addLast(immutablePos);
-        this.retryTargets.add(immutablePos);
-
-        int maxRetryTargets = this.getMaxRetryTargets();
-        while (this.retryQueue.size() > maxRetryTargets) {
-            BlockPos removed = this.retryQueue.pollFirst();
-            if (removed != null) {
-                this.retryTargets.remove(removed);
-            }
+    private void consumeToolSessionAction() {
+        if (this.toolSessionRemaining > 0) {
+            this.toolSessionRemaining--;
         }
     }
 
-    private BlockPos pollRetryTarget() {
-        BlockPos pos = this.retryQueue.pollFirst();
-        if (pos != null) {
-            this.retryTargets.remove(pos);
-        }
-        return pos;
-    }
-
-    private int getMaxRetryTargets() {
+    private int getToolSessionQuota() {
         int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
         if (configuredBudget <= 0) {
-            return 512;
+            return 12;
         }
-        return Math.max(128, configuredBudget * 16);
+        return Math.max(4, Math.min(12, configuredBudget / 2));
+    }
+
+    private MineBreakExecutor.Target selectSwitchToolInstantCandidate() {
+        MineBreakExecutor.Target selected = null;
+        for (MineBreakExecutor.Target target : this.candidates) {
+            if (this.analyzer.isInstantWithCurrentTool(target) || !this.analyzer.isInstantWithBestTool(target)) {
+                continue;
+            }
+            if (selected == null || target.progress() > selected.progress()) {
+                selected = target;
+            }
+        }
+        return selected;
+    }
+
+    private MineBreakExecutor.Target selectCurrentToolContinuousCandidate() {
+        MineBreakExecutor.Target selected = null;
+        for (MineBreakExecutor.Target target : this.candidates) {
+            if (!this.analyzer.canUseCurrentTool(target)) {
+                continue;
+            }
+            if (selected == null || target.currentProgress() > selected.currentProgress()) {
+                selected = target;
+            }
+        }
+        return selected;
+    }
+
+    private MineBreakExecutor.Target selectSwitchToolContinuousCandidate() {
+        MineBreakExecutor.Target selected = null;
+        for (MineBreakExecutor.Target target : this.candidates) {
+            if (!this.analyzer.canUseBetterTool(target)) {
+                continue;
+            }
+            if (selected == null || target.progress() > selected.progress()) {
+                selected = target;
+            }
+        }
+        return selected;
+    }
+
+    private boolean hasInstantBudget() {
+        return this.remainingInstantBudget < 0 || this.remainingInstantBudget > 0;
+    }
+
+    private void consumeInstantBudget() {
+        if (this.remainingInstantBudget > 0) {
+            this.remainingInstantBudget--;
+        }
+    }
+
+    private void handleMineResult(BlockPos blockPos, BlockBreakResult result) {
+        switch (result) {
+            case COMPLETED -> {
+                InteractionUtils.INSTANCE.markRecentlyBroken(blockPos);
+                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
+                HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.MINE, 1);
+                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "运行中");
+            }
+            case COMPLETED_WAIT -> {
+                InteractionUtils.INSTANCE.markRecentlyBroken(blockPos);
+                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "等待服务端确认");
+            }
+            case IN_PROGRESS -> {
+                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
+                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "破坏中");
+            }
+            case ABORTED -> {
+                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
+                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "挖掘中断");
+            }
+            case FAILED -> HudStatsManager.INSTANCE.recordFailure(HudStatsManager.Mode.MINE, "破坏失败");
+        }
     }
 }

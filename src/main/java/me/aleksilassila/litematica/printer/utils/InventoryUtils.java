@@ -108,6 +108,15 @@ public class InventoryUtils {
         setSelectedSlot(inventory, slot);
     }
 
+    public static void syncSelectedHotbarSlot() {
+        LocalPlayer player = client.player;
+        ClientPacketListener connection = client.getConnection();
+        if (player == null || connection == null) {
+            return;
+        }
+        connection.send(new ServerboundSetCarriedItemPacket(getSelectedSlot(player.getInventory())));
+    }
+
     /**
      * 检查是否有可用的 Pick 槽位
      *
@@ -399,8 +408,8 @@ public class InventoryUtils {
 
         Inventory inventory = player.getInventory();
         ItemStack currentStack = player.getMainHandItem();
-        float currentSpeed = PlayerUtils.getBlockBreakingSpeed(player, blockState, currentStack);
-        float bestSpeed = currentSpeed;
+        float currentProgress = getDestroyProgress(player, blockState, currentStack);
+        float bestProgress = currentProgress;
         int bestSlot = -1;
         ItemStack bestStack = ItemStack.EMPTY;
 
@@ -410,9 +419,9 @@ public class InventoryUtils {
             if (stack.isEmpty()) {
                 continue;
             }
-            float speed = PlayerUtils.getBlockBreakingSpeed(player, blockState, stack);
-            if (speed > bestSpeed) {
-                bestSpeed = speed;
+            float progress = getDestroyProgress(player, blockState, stack);
+            if (progress > bestProgress) {
+                bestProgress = progress;
                 bestSlot = slot;
                 bestStack = stack;
             }
@@ -422,6 +431,18 @@ public class InventoryUtils {
             return false;
         }
         return setPickedItemToHand(bestSlot, bestStack, client);
+    }
+
+    private static float getDestroyProgress(LocalPlayer player, BlockState state, ItemStack stack) {
+        float hardness = state.getBlock().defaultDestroyTime();
+        if (hardness < 0.0F) {
+            return 0.0F;
+        }
+        if (hardness == 0.0F) {
+            return 1.0F;
+        }
+        int divisor = (!state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state)) ? 30 : 100;
+        return PlayerUtils.getBlockBreakingSpeed(player, state, stack) / hardness / (float) divisor;
     }
 
     public static boolean switchToItems(LocalPlayer player, Item[] items) {

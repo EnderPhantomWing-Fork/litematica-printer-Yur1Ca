@@ -340,7 +340,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     }
 
     @Override
-    public BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
+    public BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction, boolean allowToolSwitch) {
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
         MultiPlayerGameMode gameMode = minecraft.gameMode;
@@ -367,7 +367,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             return BlockBreakResult.FAILED;
         }
 
-        if (!InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
+        if (!allowToolSwitch || !InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
             ensureHasSentCarriedItem();
         }
 
@@ -385,7 +385,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 return BlockBreakResult.IN_PROGRESS;
             }
 
-            BlockBreakResult result = this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true);
+            BlockBreakResult result = this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true, allowToolSwitch);
             if (result == BlockBreakResult.FAILED) {
                 return BlockBreakResult.FAILED;
             }
@@ -413,7 +413,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     }
 
     @Override
-    public BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy) {
+    public BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy, boolean allowToolSwitch) {
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
         MultiPlayerGameMode gameMode = minecraft.gameMode;
@@ -465,9 +465,10 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             MineDebugLog.write("mine break completed pos=" + MineDebugLog.pos(blockPos) + " path=instabuild");
             return BlockBreakResult.COMPLETED;
         }
-        if (!InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
-            ensureHasSentCarriedItem();
+        if (allowToolSwitch) {
+            InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState);
         }
+        ensureHasSentCarriedItem();
         boolean useDelayedDestroy = forceDelayedDestroy || Configs.Break.BREAK_USE_DELAYED_DESTROY.getBooleanValue();
         if (blockState.isAir()) {
             if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {

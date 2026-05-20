@@ -37,8 +37,11 @@ public class InteractionUtils {
     public static final InteractionUtils INSTANCE = new InteractionUtils();
 
     private final Queue<BlockPos> breakQueue = new LinkedList<>();
+    private final Map<BlockPos, Integer> recentlyBroken = new HashMap<>();
+    private final Map<BlockPos, Integer> pendingBroken = new HashMap<>();
     private BlockPos breakPos;
     private boolean forceDelayedDestroy;
+    private int externalDestroyLockTicks;
 
     private InteractionUtils() {
     }
@@ -90,15 +93,15 @@ public class InteractionUtils {
         if (pos == null || blockState == null || blockState.isAir() || blockState.getBlock() instanceof LiquidBlock) {
             return false;
         }
+        LocalPlayer player = client.player;
+        if (Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()) {
+            return player != null && InventoryUtils.switchToBestTool(player, blockState);
+        }
         if (ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isToolSwitchEnabled()) {
             TweakerooUtils.trySwitchToEffectiveTool(pos);
             return true;
         }
-        if (!Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()) {
-            return false;
-        }
-        LocalPlayer player = client.player;
-        return player != null && InventoryUtils.switchToBestTool(player, blockState);
+        return false;
     }
 
     public void add(BlockPos pos) {
@@ -111,7 +114,32 @@ public class InteractionUtils {
         this.add(ctx.blockPos);
     }
 
+    private void tickRecentlyBroken() {
+        tickBreakMarkerMap(this.recentlyBroken);
+        tickBreakMarkerMap(this.pendingBroken);
+    }
+
+    private void tickBreakMarkerMap(Map<BlockPos, Integer> markerMap) {
+        if (markerMap.isEmpty()) {
+            return;
+        }
+        Iterator<Map.Entry<BlockPos, Integer>> iterator = markerMap.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, Integer> entry = iterator.next();
+            int remainingTicks = entry.getValue() - 1;
+            if (remainingTicks <= 0) {
+                iterator.remove();
+            } else {
+                entry.setValue(remainingTicks);
+            }
+        }
+    }
+
     public void preprocess() {
+        this.tickRecentlyBroken();
+        if (this.externalDestroyLockTicks > 0) {
+            this.externalDestroyLockTicks--;
+        }
         if (!ConfigUtils.isEnable()) {
             if (!breakQueue.isEmpty()) {
                 breakQueue.clear();
@@ -119,6 +147,13 @@ public class InteractionUtils {
             if (breakPos != null) {
                 breakPos = null;
             }
+            if (!this.recentlyBroken.isEmpty()) {
+                this.recentlyBroken.clear();
+            }
+            if (!this.pendingBroken.isEmpty()) {
+                this.pendingBroken.clear();
+            }
+            this.externalDestroyLockTicks = 0;
             this.forceDelayedDestroy = false;
         }
     }
@@ -131,6 +166,9 @@ public class InteractionUtils {
         LocalPlayer player = client.player;
         ClientLevel level = client.level;
         if (player == null || level == null) {
+            return;
+        }
+        if (this.externalDestroyLockTicks > 0) {
             return;
         }
         if (breakPos == null && breakQueue.isEmpty()) {
@@ -159,6 +197,7 @@ public class InteractionUtils {
                 return;
             }
             if (continueDestroyBlock(breakPos, Direction.DOWN) != BlockBreakResult.IN_PROGRESS) {
+                this.markRecentlyBroken(breakPos);
                 breakPos = null;
                 this.forceDelayedDestroy = false;
                 onTick();
@@ -168,6 +207,32 @@ public class InteractionUtils {
 
     public boolean hasActiveDestroyTarget() {
         return this.breakPos != null;
+    }
+
+    public void suppressQueuedBreaks(int ticks) {
+        this.externalDestroyLockTicks = Math.max(this.externalDestroyLockTicks, ticks);
+    }
+
+    public void markRecentlyBroken(BlockPos pos) {
+        if (pos != null) {
+            this.recentlyBroken.put(pos.immutable(), 2);
+        }
+    }
+
+    public void markPendingBroken(BlockPos pos, int timeoutTicks) {
+        if (pos != null) {
+            this.pendingBroken.put(pos.immutable(), Math.max(timeoutTicks, 1));
+        }
+    }
+
+    public void clearPendingBroken(BlockPos pos) {
+        if (pos != null) {
+            this.pendingBroken.remove(pos);
+        }
+    }
+
+    public boolean isRecentlyBroken(BlockPos pos) {
+        return pos != null && (this.recentlyBroken.containsKey(pos) || this.pendingBroken.containsKey(pos));
     }
 
     public BlockBreakResult continueDestroyBlock(final BlockPos blockPos, Direction direction, boolean localPrediction, boolean trackBreakPos) {
@@ -195,11 +260,15 @@ public class InteractionUtils {
     }
 
     public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
+        return this.continueDestroyBlockForMine(blockPos, direction, true);
+    }
+
+    public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos, Direction direction, boolean allowToolSwitch) {
         MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
         if (gameMode == null) {
             return BlockBreakResult.FAILED;
         }
-        return gameMode.litematica_printer$continueDestroyBlockForMine(blockPos, direction);
+        return gameMode.litematica_printer$continueDestroyBlockForMine(blockPos, direction, allowToolSwitch);
     }
 
     public BlockBreakResult continueDestroyBlockForMine(BlockPos blockPos) {

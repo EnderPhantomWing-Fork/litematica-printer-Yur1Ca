@@ -14,10 +14,18 @@ public interface MultiPlayerGameModeExtension {
         return this.litematica_printer$continueDestroyBlock(localPrediction, blockPos, direction, false);
     }
 
-    BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy);
+    default BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy) {
+        return this.litematica_printer$continueDestroyBlock(localPrediction, blockPos, direction, forceDelayedDestroy, true);
+    }
+
+    BlockBreakResult litematica_printer$continueDestroyBlock(boolean localPrediction, BlockPos blockPos, Direction direction, boolean forceDelayedDestroy, boolean allowToolSwitch);
 
     default BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction) {
-        return this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true);
+        return this.litematica_printer$continueDestroyBlockForMine(blockPos, direction, true);
+    }
+
+    default BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction, boolean allowToolSwitch) {
+        return this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true, allowToolSwitch);
     }
 
     default boolean litematica_printer$isPendingDelayedDestroy(BlockPos blockPos) {

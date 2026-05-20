@@ -111,7 +111,7 @@ public class PlayerUtils {
         if (hardness == -1.0F) {
             return 0.0F;
         } else {
-            int i = player.hasCorrectToolForDrops(state) ? 30 : 100;
+            int i = (!state.requiresCorrectToolForDrops() || itemStack.isCorrectToolForDrops(state)) ? 30 : 100;
             return getBlockBreakingSpeed(player, state, itemStack) / hardness / (float) i;
         }
     }
