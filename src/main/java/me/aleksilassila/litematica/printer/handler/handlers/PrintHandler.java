@@ -128,17 +128,20 @@ public class PrintHandler extends ClientPlayerTickHandler {
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
                 HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "下落方块无支撑");
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(ctx.requiredBlockName().getString()));
+                setIterationConsumedEffectiveExecution(false);
                 return;
             }
         }
         Direction side = action.getValidSide(level, blockPos);
         if (side == null) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "无有效放置面");
+            setIterationConsumedEffectiveExecution(false);
             return;
         }
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
         if (!InventoryUtils.switchToItems(player, reqItems)) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
+            setIterationConsumedEffectiveExecution(false);
             return;
         }
         boolean useShift;
