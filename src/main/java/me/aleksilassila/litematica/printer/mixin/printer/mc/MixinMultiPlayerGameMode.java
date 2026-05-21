@@ -385,7 +385,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 return BlockBreakResult.IN_PROGRESS;
             }
 
-            BlockBreakResult result = this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true, allowToolSwitch);
+            BlockBreakResult result = this.litematica_printer$continueDestroyBlock(false, blockPos, direction, false, allowToolSwitch);
             if (result == BlockBreakResult.FAILED) {
                 return BlockBreakResult.FAILED;
             }

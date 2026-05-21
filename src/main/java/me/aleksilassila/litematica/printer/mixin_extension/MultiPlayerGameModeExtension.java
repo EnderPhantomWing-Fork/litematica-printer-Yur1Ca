@@ -25,7 +25,7 @@ public interface MultiPlayerGameModeExtension {
     }
 
     default BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction, boolean allowToolSwitch) {
-        return this.litematica_printer$continueDestroyBlock(false, blockPos, direction, true, allowToolSwitch);
+        return this.litematica_printer$continueDestroyBlock(false, blockPos, direction, false, allowToolSwitch);
     }
 
     default boolean litematica_printer$isPendingDelayedDestroy(BlockPos blockPos) {
