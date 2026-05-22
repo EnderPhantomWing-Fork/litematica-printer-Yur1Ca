@@ -9,6 +9,8 @@ import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -24,16 +26,21 @@ import java.util.Optional;
 public class RailGuide extends Guide {
     private static final int MAX_REPAIR_ATTEMPTS = 3;
     private static final int PENDING_REPAIR_TICKS = 40;
-    private static final Map<BlockPos, Integer> repairAttempts = new HashMap<>();
-    private static final Map<BlockPos, Long> pendingRepairs = new HashMap<>();
+    private static final Map<RailRepairKey, Integer> repairAttempts = new HashMap<>();
+    private static final Map<RailRepairKey, Long> pendingRepairs = new HashMap<>();
 
     public RailGuide(SchematicBlockContext context) {
         super(context);
     }
 
+    public static void clearRepairState() {
+        repairAttempts.clear();
+        pendingRepairs.clear();
+    }
+
     @Override
     protected Result onBuildActionMissingBlock(BlockMatchResult state) {
-        pendingRepairs.remove(blockPos);
+        clearRepairState(blockPos);
 
         Optional<RailShape> railShape = getRailShape(requiredState);
 
@@ -63,25 +70,24 @@ public class RailGuide extends Guide {
             return Result.SKIP;
         }
 
+        RailRepairKey key = repairKey(requiredShape.get());
         if (!railConnectionsReady(requiredShape.get())
-                || isRepairPending(blockPos)
-                || repairAttempts.getOrDefault(blockPos, 0) >= MAX_REPAIR_ATTEMPTS
+                || isRepairPending(key)
+                || repairAttempts.getOrDefault(key, 0) >= MAX_REPAIR_ATTEMPTS
                 || !InteractionUtils.canBreakBlock(blockPos)
                 || !InteractionUtils.breakRestriction(currentState)) {
             return Result.SKIP;
         }
 
-        BlockPos key = blockPos.immutable();
         repairAttempts.put(key, repairAttempts.getOrDefault(key, 0) + 1);
         pendingRepairs.put(key, level.getGameTime());
-        InteractionUtils.INSTANCE.add(key);
+        InteractionUtils.INSTANCE.add(key.pos());
         return Result.SKIP;
     }
 
     @Override
     protected Result onBuildActionCorrect(BlockMatchResult state) {
-        repairAttempts.remove(blockPos);
-        pendingRepairs.remove(blockPos);
+        clearRepairState(blockPos);
         return Result.PASS;
     }
 
@@ -90,16 +96,26 @@ public class RailGuide extends Guide {
                 .or(() -> getProperty(state, BlockStateProperties.RAIL_SHAPE_STRAIGHT));
     }
 
-    private boolean isRepairPending(BlockPos pos) {
-        Long startedAt = pendingRepairs.get(pos);
+    private boolean isRepairPending(RailRepairKey key) {
+        Long startedAt = pendingRepairs.get(key);
         if (startedAt == null) {
             return false;
         }
         if (level.getGameTime() - startedAt < PENDING_REPAIR_TICKS) {
             return true;
         }
-        pendingRepairs.remove(pos);
+        pendingRepairs.remove(key);
         return false;
+    }
+
+    private void clearRepairState(BlockPos pos) {
+        ResourceKey<Level> dimension = level.dimension();
+        repairAttempts.keySet().removeIf(key -> key.matches(dimension, pos));
+        pendingRepairs.keySet().removeIf(key -> key.matches(dimension, pos));
+    }
+
+    private RailRepairKey repairKey(RailShape shape) {
+        return new RailRepairKey(level.dimension(), blockPos.immutable(), shape);
     }
 
     private boolean railConnectionsReady(RailShape shape) {
@@ -120,5 +136,11 @@ public class RailGuide extends Guide {
     private boolean connectionReady(BlockPos pos) {
         BlockState schematicState = schematic.getBlockState(pos);
         return !BaseRailBlock.isRail(schematicState) || BaseRailBlock.isRail(level.getBlockState(pos));
+    }
+
+    private record RailRepairKey(ResourceKey<Level> dimension, BlockPos pos, RailShape requiredShape) {
+        private boolean matches(ResourceKey<Level> dimension, BlockPos pos) {
+            return this.dimension.equals(dimension) && this.pos.equals(pos);
+        }
     }
 }

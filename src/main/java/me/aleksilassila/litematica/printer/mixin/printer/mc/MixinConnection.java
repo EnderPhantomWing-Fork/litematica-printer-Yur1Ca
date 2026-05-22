@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.mixin.printer.mc;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.guide.guides.RailGuide;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.fabricmc.api.EnvType;
@@ -19,7 +20,7 @@ import static me.aleksilassila.litematica.printer.printer.zxy.utils.ZxyUtils.exi
 @Environment(EnvType.CLIENT)
 @Mixin(Connection.class)
 public class MixinConnection {
-    @Inject(method = "genericsFtw", at = @At("HEAD"), require = 1)
+    @Inject(method = "genericsFtw", at = @At("HEAD"), require = 0)
     private static void hookGenericsFtw(Packet<?> packet, PacketListener listener, CallbackInfo ci) {
         if (ConfigUtils.isEnable()) {
             ClientPlayerTickManager.recordInboundPacket();   // 用于延迟检测与服务端回包近似确认
@@ -29,6 +30,7 @@ public class MixinConnection {
     @Inject(method = "disconnect*", at = {@At("HEAD")})
     public void disconnect(Component ignored, CallbackInfo ci) {
         exitGameReSet();    // 退出重置
+        RailGuide.clearRepairState();
         if (Configs.Core.AUTO_DISABLE_PRINTER.getBooleanValue() && Configs.Core.WORK_SWITCH.getBooleanValue()) {
             Configs.Core.WORK_SWITCH.setBooleanValue(false);
         }

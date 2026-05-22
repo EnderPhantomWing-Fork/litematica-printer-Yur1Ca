@@ -58,10 +58,16 @@ public abstract class ChestTrackerScreenMixin extends Screen {
             );
             filtered.addAll(SearchablesUtil.ITEM_STACK.filterEntries(itemsSnapshot, filter.toLowerCase()));
             filtered = filtered.stream().distinct().toList();
-            this.itemList.setItems(filtered);
-            ChestTrackerConfig.Gui guiConfig = ChestTrackerConfig.INSTANCE.instance().gui;
-            this.scroll.setDisabled(filtered.size() <= guiConfig.gridWidth * guiConfig.gridHeight);
-        }).start();
+            List<ItemStack> finalFiltered = filtered;
+            Minecraft.getInstance().execute(() -> {
+                if (Minecraft.getInstance().screen != this) {
+                    return;
+                }
+                this.itemList.setItems(finalFiltered);
+                ChestTrackerConfig.Gui guiConfig = ChestTrackerConfig.INSTANCE.instance().gui;
+                this.scroll.setDisabled(finalFiltered.size() <= guiConfig.gridWidth * guiConfig.gridHeight);
+            });
+        }, "litematica-printer-chest-search").start();
     }
 
     @Inject(at = @At("HEAD"), method = "updateItems", remap = false)

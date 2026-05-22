@@ -31,7 +31,7 @@ public class GuiBlockInfo {
         if (schematic == null) {
             this.requiredState = null;
         } else {
-            this.requiredState = schematic.getBlockState(pos.above());
+            this.requiredState = schematic.getBlockState(pos);
         }
     }
 
