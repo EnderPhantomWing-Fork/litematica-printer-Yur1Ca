@@ -53,6 +53,7 @@ import net.minecraft.client.renderer.state.level.CameraRenderState;
 //#endif
 public class HighlightBlockRenderer implements IRenderer {
     public static HighlightBlockRenderer instance = new HighlightBlockRenderer();
+    private static final Object HIGHLIGHT_LOCK = new Object();
     public static Map<String, HighlightTheProject> highlightTheProjectMap = new HashMap<>();
     public static String threadName = Reference.MOD_ID + "-render";
     public static boolean shaderIng = false;
@@ -60,26 +61,34 @@ public class HighlightBlockRenderer implements IRenderer {
     public static Map<String, Set<BlockPos>> setMap = new HashMap<>();
 
     public static void createHighlightBlockList(String id, ConfigColor color4f) {
-        if (highlightTheProjectMap.get(id) == null) {
-            highlightTheProjectMap.put(id, new HighlightTheProject(color4f, new LinkedHashSet<>()));
+        synchronized (HIGHLIGHT_LOCK) {
+            if (highlightTheProjectMap.get(id) == null) {
+                highlightTheProjectMap.put(id, new HighlightTheProject(color4f, new LinkedHashSet<>()));
+            }
         }
     }
 
     public static Set<BlockPos> getHighlightBlockPosList(String id) {
-        if (highlightTheProjectMap.get(id) != null) {
-            return highlightTheProjectMap.get(id).pos();
+        synchronized (HIGHLIGHT_LOCK) {
+            if (highlightTheProjectMap.get(id) != null) {
+                return highlightTheProjectMap.get(id).pos();
+            }
         }
         return null;
     }
 
     public static void clear(String id) {
-        if (!clearList.contains(id)) clearList.add(id);
+        synchronized (HIGHLIGHT_LOCK) {
+            if (!clearList.contains(id)) clearList.add(id);
+        }
     }
 
     public static void setPos(String id, Set<BlockPos> posSet) {
-        HighlightTheProject highlightTheProject = highlightTheProjectMap.get(id);
-        if (highlightTheProject != null && posSet != null) {
-            setMap.put(id, posSet);
+        synchronized (HIGHLIGHT_LOCK) {
+            HighlightTheProject highlightTheProject = highlightTheProjectMap.get(id);
+            if (highlightTheProject != null && posSet != null) {
+                setMap.put(id, new LinkedHashSet<>(posSet));
+            }
         }
     }
 
@@ -87,8 +96,10 @@ public class HighlightBlockRenderer implements IRenderer {
     public static void init() {
         RenderEventHandler.getInstance().registerWorldLastRenderer(instance);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client1) -> {
-            for (Map.Entry<String, HighlightTheProject> stringHighlightTheProjectEntry : highlightTheProjectMap.entrySet()) {
-                stringHighlightTheProjectEntry.getValue().pos.clear();
+            synchronized (HIGHLIGHT_LOCK) {
+                for (Map.Entry<String, HighlightTheProject> stringHighlightTheProjectEntry : highlightTheProjectMap.entrySet()) {
+                    stringHighlightTheProjectEntry.getValue().pos.clear();
+                }
             }
         });
     }
@@ -192,38 +203,45 @@ public class HighlightBlockRenderer implements IRenderer {
     //#else
     //$$ public void onRenderWorldLast(PoseStack matrices, Matrix4f projMatrix){
     //#endif
-        //更改渲染
-        setMap.forEach((k, v) -> {
-            HighlightTheProject highlightTheProject = highlightTheProjectMap.get(k);
-            if (highlightTheProject != null) {
-                highlightTheProject.pos.clear();
-                highlightTheProject.pos.addAll(v);
-            }
-        });
-        setMap.clear();
+        List<HighlightRenderSnapshot> snapshots = new ArrayList<>();
+        synchronized (HIGHLIGHT_LOCK) {
+            //更改渲染
+            setMap.forEach((k, v) -> {
+                HighlightTheProject highlightTheProject = highlightTheProjectMap.get(k);
+                if (highlightTheProject != null) {
+                    highlightTheProject.pos.clear();
+                    highlightTheProject.pos.addAll(v);
+                }
+            });
+            setMap.clear();
 
-        for (String string : clearList) {
-            HighlightTheProject highlightTheProject = highlightTheProjectMap.get(string);
-            if (highlightTheProject != null) {
-                highlightTheProject.pos.clear();
+            for (String string : clearList) {
+                HighlightTheProject highlightTheProject = highlightTheProjectMap.get(string);
+                if (highlightTheProject != null) {
+                    highlightTheProject.pos.clear();
+                }
+            }
+            clearList.clear();
+
+            for (HighlightTheProject value : highlightTheProjectMap.values()) {
+                if (!value.pos.isEmpty()) {
+                    snapshots.add(new HighlightRenderSnapshot(value.color4f.getColor(), new LinkedHashSet<>(value.pos)));
+                }
             }
         }
-        clearList.clear();
 
         shaderIng = true;
-        highlightTheProjectMap.entrySet().stream().parallel().forEach(stringHighlightTheProjectEntry -> {
-            String key = stringHighlightTheProjectEntry.getKey();
-            HighlightTheProject value = stringHighlightTheProjectEntry.getValue();
-
-            Color4f color = value.color4f.getColor();
-            test3(matrices, color, value.pos);
-
-        });
+        for (HighlightRenderSnapshot snapshot : snapshots) {
+            test3(matrices, snapshot.color, snapshot.pos);
+        }
         shaderIng = false;
     }
 
     // @formatter:on
 
     public record HighlightTheProject(ConfigColor color4f, Set<BlockPos> pos) {
+    }
+
+    private record HighlightRenderSnapshot(Color4f color, Set<BlockPos> pos) {
     }
 }

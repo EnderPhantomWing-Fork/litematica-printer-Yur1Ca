@@ -17,7 +17,7 @@
     "sources": "${mod_sources}"
   },
   "license": "${mod_license}",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "main": [
       "me.aleksilassila.litematica.printer.LitematicaPrinterMod"

@@ -2,7 +2,6 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.MineDebugLog;
-import me.aleksilassila.litematica.printer.mixin.MinecraftAccessor;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
@@ -661,6 +660,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
 
     @Unique
     private long getClientTickCount() {
-        return ((MinecraftAccessor) Minecraft.getInstance()).getClientTickCount();
+        ClientLevel level = this.minecraft.level;
+        return level == null ? 0L : level.getGameTime();
     }
 }

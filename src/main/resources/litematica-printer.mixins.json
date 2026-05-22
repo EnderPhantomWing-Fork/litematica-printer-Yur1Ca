@@ -20,11 +20,9 @@
     "printer.malilib.config.MixinIConfigBase",
     "printer.mc.MixinBlockItem",
     "printer.mc.MixinConnection",
-    "printer.mc.MixinGui",
     "printer.mc.MixinServerboundMovePlayerPacket"
   ],
   "client": [
-    "MinecraftAccessor",
     "MixinClientPacketListener",
     "jackf.ChestTrackerScreenMixin",
     "jackf.EditMemoryBankScreenMixin",

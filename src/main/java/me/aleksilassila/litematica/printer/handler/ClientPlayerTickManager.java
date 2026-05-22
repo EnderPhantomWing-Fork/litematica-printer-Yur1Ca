@@ -5,10 +5,10 @@ import lombok.Getter;
 import lombok.Setter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.*;
-import me.aleksilassila.litematica.printer.mixin.MinecraftAccessor;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem;
@@ -81,7 +81,8 @@ public class ClientPlayerTickManager {
     }
 
     public static long getCurrentHandlerTime() {
-        return ((MinecraftAccessor) Minecraft.getInstance()).getClientTickCount();
+        ClientLevel level = Minecraft.getInstance().level;
+        return level == null ? 0L : level.getGameTime();
     }
 
     public static void recordInboundPacket() {
