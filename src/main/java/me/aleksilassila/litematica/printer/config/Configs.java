@@ -442,17 +442,17 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 打印目标排序
         public static final ConfigBoolean PRINT_SORT_TARGETS = bool("printSortTargets")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         // 放置面排序
         public static final ConfigBoolean PRINT_SORT_SIDES = bool("printSortSides")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         // 铁轨形态修复
         public static final ConfigBoolean REPAIR_RAIL_SHAPE = bool("printRepairRailShape")
-                .defaultValue(true)
+                .defaultValue(false)
                 .build();
 
         // 跳过放置
