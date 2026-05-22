@@ -138,6 +138,8 @@
   "litematica-printer.config.printSortSides.desc": "啟後優先取近玩家視向、較易點中之置石面。",
   "litematica-printer.config.printSortTargets": "智能擇標",
   "litematica-printer.config.printSortTargets.desc": "啟後優先處理手中之石相合、近視向、近玩家之摹形目標。",
+  "litematica-printer.config.printRepairRailShape": "自正鐵軌形",
+  "litematica-printer.config.printRepairRailShape.desc": "啟則置鐵軌後察 RailShape，若為鄰石更新所誤，最多破而重置三回。此乃客端盡力而為，非保萬形皆正。",
   "litematica-printer.config.placeInterval": "置石間隔刻",
   "litematica-printer.config.placeInterval.desc": "置石之間隔刻數。\n為防特殊石誤置，或自添延遲。\n設零或致限包伺服器上效不佳。\n摹紅石機關時不建議設零。",
   "litematica-printer.config.placeUsePacket": "包絡置石",

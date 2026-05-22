@@ -144,6 +144,8 @@
   "litematica-printer.config.printSortSides.desc": "When enabled, prioritize placement faces that are closer to the player's view and usually easier to click.",
   "litematica-printer.config.printSortTargets": "Smart Target Sorting",
   "litematica-printer.config.printSortTargets.desc": "When enabled, prioritize print targets matching the held block, closer to the view direction, and closer to the player.",
+  "litematica-printer.config.printRepairRailShape": "Auto Repair Rail Shape",
+  "litematica-printer.config.printRepairRailShape.desc": "When enabled, the printer checks RailShape after placing rails and will break and retry up to 3 times if neighbor updates bend them incorrectly. This is a client-side best-effort repair and cannot fix every vanilla-unstable shape.",
   "litematica-printer.config.placeInterval": "Placement Interval Time",
   "litematica-printer.config.placeInterval.desc": "Interval time for placing blocks (in game ticks).\nMay automatically add delays to avoid placement errors for some special blocks.\nSetting to 0 may cause poor performance on servers with packet restrictions.\nNot recommended to set to 0 when printing redstone mechanisms.",
   "litematica-printer.config.placeUsePacket": "Placement Using Packets",

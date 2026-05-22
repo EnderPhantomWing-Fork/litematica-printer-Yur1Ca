@@ -450,6 +450,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
+        // 铁轨形态修复
+        public static final ConfigBoolean REPAIR_RAIL_SHAPE = bool("printRepairRailShape")
+                .defaultValue(true)
+                .build();
+
         // 跳过放置
         public static final ConfigBoolean PRINT_SKIP = bool("printSkip")
                 .defaultValue(false)
@@ -547,6 +552,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PLACE_IN_AIR,
                 PRINT_SORT_TARGETS,
                 PRINT_SORT_SIDES,
+                REPAIR_RAIL_SHAPE,
                 PRINT_FORCED_SNEAK,
                 BREAK_WRONG_BLOCK,
                 BREAK_EXTRA_BLOCK,

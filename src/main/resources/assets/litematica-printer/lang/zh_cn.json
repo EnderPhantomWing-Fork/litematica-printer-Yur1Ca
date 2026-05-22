@@ -144,6 +144,8 @@
   "litematica-printer.config.printSortSides.desc": "启用后，会优先选择更靠近玩家视角、通常更容易点到的放置面。",
   "litematica-printer.config.printSortTargets": "智能打印目标排序",
   "litematica-printer.config.printSortTargets.desc": "启用后，会优先处理当前手持方块匹配、视角更接近、距离更近的打印目标。",
+  "litematica-printer.config.printRepairRailShape": "自动修复铁轨形态",
+  "litematica-printer.config.printRepairRailShape.desc": "启用后，打印机会在铁轨放置后检查 RailShape，发现被邻居更新改歪时会最多破坏重放 3 次。这是客户端尽力修复，不能保证修复所有 vanilla 不稳定形态。",
   "litematica-printer.config.placeInterval": "放置间隔时间",
   "litematica-printer.config.placeInterval.desc": "放置方块的间隔时间(单位为游戏刻)。\n为避免一些特殊方块放置错误，可能会自动添加延迟。\n设置为0可能会导致在有发包限制的服务器上表现不好。\n打印红石机械时不建议设置为0。",
   "litematica-printer.config.placeUsePacket": "放置使用数据包",
