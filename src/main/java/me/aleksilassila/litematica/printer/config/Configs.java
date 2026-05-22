@@ -55,6 +55,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     static {
         LinkedHashSet<IConfigBase> optionSet = new LinkedHashSet<>();
         optionSet.addAll(Core.OPTIONS);           // 核心
+        optionSet.addAll(Special.OPTIONS);        // 特殊
         optionSet.addAll(Placement.OPTIONS);      // 放置
         optionSet.addAll(Break.OPTIONS);          // 破坏
         optionSet.addAll(Hotkeys.OPTIONS);        // 热键
@@ -225,12 +226,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue("#4CFF4CE6")
                 .build();
 
-        // Tweakeroo - 放宽凭空放置限制
-        public static final ConfigBoolean TWEAKEROO_ANGEL_BLOCK_MAY_BUILD = bool("tweakerooAngelBlockMayBuild")
-                .defaultValue(false)
-                .setVisible(ModLoadUtils::isTweakerooLoaded)
-                .build();
-
         // 通用配置项列表（按功能分类排序）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 WORK_SWITCH,
@@ -259,7 +254,24 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 CLOUD_INVENTORY,
                 AUTO_INVENTORY,
                 INVENTORY_LIST,
-                SYNC_INVENTORY_COLOR,
+                SYNC_INVENTORY_COLOR
+        );
+    }
+
+    public static class Special {
+        // 信标效果限制绕过
+        public static final ConfigBoolean UNLOCK_BEACON_EFFECTS = bool("unlockBeaconEffects")
+                .defaultValue(false)
+                .build();
+
+        // Tweakeroo - 放宽凭空放置限制
+        public static final ConfigBoolean TWEAKEROO_ANGEL_BLOCK_MAY_BUILD = bool("tweakerooAngelBlockMayBuild")
+                .defaultValue(false)
+                .setVisible(ModLoadUtils::isTweakerooLoaded)
+                .build();
+
+        public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                UNLOCK_BEACON_EFFECTS,
                 TWEAKEROO_ANGEL_BLOCK_MAY_BUILD
         );
     }

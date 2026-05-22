@@ -76,6 +76,7 @@ public class ConfigUi extends GuiConfigsBase {
 
     public enum Tab {
         CORE(I18n.of("category.core")),
+        SPECIAL(I18n.of("category.special")),
         PLACEMENT(I18n.of("category.placement")),
         BREAK(I18n.of("category.break")),
         HOTKEYS(I18n.of("category.hotkeys")),
@@ -102,6 +103,7 @@ public class ConfigUi extends GuiConfigsBase {
         public ImmutableList<IConfigBase> getConfigs() {
             return switch (this) {
                 case CORE -> Configs.Core.OPTIONS;
+                case SPECIAL -> Configs.Special.OPTIONS;
                 case PLACEMENT -> Configs.Placement.OPTIONS;
                 case BREAK -> Configs.Break.OPTIONS;
                 case BEDROCK -> Configs.Bedrock.OPTIONS;

@@ -34,6 +34,7 @@ public class Action {
     };
 
     protected Map<Direction, Vec3> sides;
+    protected boolean customSides;
     @Nullable
     @Getter
     protected PlayerLook playerLook = null;
@@ -52,6 +53,7 @@ public class Action {
 
     public Action() {
         this.sides = createDefaultSides();
+        this.customSides = false;
     }
 
     public Action setLookRotation(int lookRotation) {
@@ -94,17 +96,20 @@ public class Action {
             }
         }
         this.sides = sides;
+        this.customSides = true;
         return this;
     }
 
     public Action setSides(Map<Direction, Vec3> sides) {
         this.sides = copySidesInDefaultOrder(sides);
+        this.customSides = true;
         return this;
     }
 
     public Action setSides(Direction side, Vec3 offset) {
         this.sides = new LinkedHashMap<>();
         this.sides.put(side, offset);
+        this.customSides = true;
         return this;
     }
 
@@ -114,6 +119,7 @@ public class Action {
             sides.put(d, new Vec3(0, 0, 0));
         }
         this.sides = sides;
+        this.customSides = true;
         return this;
     }
 
@@ -123,7 +129,9 @@ public class Action {
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             return orderedSides.isEmpty() ? null : orderedSides.get(0);
         }
-        sortSidesByPlayerView(orderedSides, pos);
+        if (!this.customSides) {
+            sortSidesByPlayerView(orderedSides, pos);
+        }
         List<Direction> validSides = new ArrayList<>();
         for (Direction side : orderedSides) {
             BlockPos neighborPos = pos.relative(side);
