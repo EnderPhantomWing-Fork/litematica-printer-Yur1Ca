@@ -40,7 +40,7 @@ public class RailGuide extends Guide {
 
     @Override
     protected Result onBuildActionMissingBlock(BlockMatchResult state) {
-        clearRepairState(blockPos);
+        clearPendingRepairState(blockPos);
 
         Optional<RailShape> railShape = getRailShape(requiredState);
 
@@ -111,6 +111,11 @@ public class RailGuide extends Guide {
     private void clearRepairState(BlockPos pos) {
         ResourceKey<Level> dimension = level.dimension();
         repairAttempts.keySet().removeIf(key -> key.matches(dimension, pos));
+        pendingRepairs.keySet().removeIf(key -> key.matches(dimension, pos));
+    }
+
+    private void clearPendingRepairState(BlockPos pos) {
+        ResourceKey<Level> dimension = level.dimension();
         pendingRepairs.keySet().removeIf(key -> key.matches(dimension, pos));
     }
 

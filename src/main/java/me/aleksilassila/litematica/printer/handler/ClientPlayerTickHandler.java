@@ -176,7 +176,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                         interrupt = true;
                         break;
                     }
-                    if (pos == null) continue;
+                    if (pos == null) {
+                        interrupt = true;
+                        break;
+                    }
                     GuiBlockInfo gui;
                     if (isSchematicBlockHandler()) {
                         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();

@@ -120,10 +120,10 @@ public class Action {
     @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
     public @Nullable Direction getValidSide(ClientLevel world, BlockPos pos) {
         List<Direction> orderedSides = getOrderedSides();
-        sortSidesByPlayerView(orderedSides, pos);
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             return orderedSides.isEmpty() ? null : orderedSides.get(0);
         }
+        sortSidesByPlayerView(orderedSides, pos);
         List<Direction> validSides = new ArrayList<>();
         for (Direction side : orderedSides) {
             BlockPos neighborPos = pos.relative(side);

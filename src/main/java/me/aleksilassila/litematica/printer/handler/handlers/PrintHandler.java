@@ -187,7 +187,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     private void fillSortedTargetQueue(PrinterBox playerInteractionBox, WorldSchematic schematic) {
         int maxTotalIter = getMaxTotalIterationsPerTick();
-        int collectLimit = maxTotalIter > 0 ? Math.max(0, maxTotalIter - 1) : Integer.MAX_VALUE;
+        int collectLimit = maxTotalIter > 0 ? maxTotalIter : Integer.MAX_VALUE;
         List<BlockPos> positions = new ArrayList<>();
         while (!this.sortedTargetQueue.isEmpty()) {
             positions.add(this.sortedTargetQueue.removeFirst());
