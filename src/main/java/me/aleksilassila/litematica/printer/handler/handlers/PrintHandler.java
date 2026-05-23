@@ -7,6 +7,7 @@ import lombok.Setter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
+import me.aleksilassila.litematica.printer.guide.guides.WaterGuide;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jetbrains.annotations.Nullable;
 
 public class PrintHandler extends ClientPlayerTickHandler {
     public final static String NAME = "print";
@@ -80,6 +82,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        BlockPos activeWaterWorkflowPos = WaterGuide.getActiveWorkflowPos();
+        if (activeWaterWorkflowPos != null) {
+            this.sortedTargetQueue.clear();
+            this.sortedTargetBox = null;
+            this.hasMoreSortedIterationPositions = false;
+            return List.of(activeWaterWorkflowPos);
+        }
         if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
             this.sortedTargetQueue.clear();
             this.sortedTargetBox = null;
@@ -103,7 +112,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
     public boolean canIterationBlockPos(BlockPos blockPos) {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
-        if (InteractionUtils.INSTANCE.isRecentlyBroken(blockPos)) {
+        if (InteractionUtils.INSTANCE.isRecentlyBroken(blockPos) && !WaterGuide.isActiveWorkflowPos(blockPos)) {
             return false;
         }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
@@ -123,6 +132,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        boolean waterWorkflowStartAction = WaterGuide.isWorkflowPlacementAction(this.ctx, this.action);
+        boolean waterWorkflowFinalPlacement = WaterGuide.isWorkflowReadyForPlacement(blockPos) && !waterWorkflowStartAction;
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
@@ -173,16 +184,35 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (!action.isConsumeEffectiveExecution()) {
             setIterationConsumedEffectiveExecution(false);
         }
-        if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
+        boolean needWaitModifyLook = ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook;
+        if (!needWaitModifyLook) {
+            if (waterWorkflowStartAction) {
+                WaterGuide.activateWorkflow(blockPos);
+            } else if (waterWorkflowFinalPlacement) {
+                WaterGuide.completeWorkflow(blockPos);
+            }
+        }
+        if (needWaitModifyLook) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");
             skipIteration.set(true);
         } else {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
         }
+        if (waterWorkflowStartAction || waterWorkflowFinalPlacement) {
+            skipIteration.set(true);
+        }
         int cooldownTicks = action.getCooldownTicksOverride() >= 0
                 ? action.getCooldownTicksOverride()
                 : ConfigUtils.getPlaceCooldown();
         setBlockPosCooldown(blockPos, cooldownTicks);
+    }
+
+    @Override
+    public boolean isBlockPosOnCooldown(@Nullable BlockPos pos) {
+        if (WaterGuide.isActiveWorkflowPos(pos)) {
+            return false;
+        }
+        return super.isBlockPosOnCooldown(pos);
     }
 
     private void fillSortedTargetQueue(PrinterBox playerInteractionBox, WorldSchematic schematic) {

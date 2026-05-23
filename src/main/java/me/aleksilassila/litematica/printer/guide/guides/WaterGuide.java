@@ -15,17 +15,17 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
-import net.minecraft.world.level.block.BubbleColumnBlock;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.shapes.CollisionContext;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -36,8 +36,13 @@ import java.util.Optional;
  * 水源/含水方块处理指南。
  */
 public class WaterGuide extends Guide {
-    private static final int WATER_SYNC_WAIT_TICKS = 10;
+    private static final int WATER_SYNC_WAIT_TICKS = 5;
+    private static final int WATER_WORKFLOW_TIMEOUT_TICKS = 20;
     private static final Map<BlockPos, Long> RECENTLY_BROKEN_ICE = new HashMap<>();
+    @Nullable
+    private static BlockPos activeWorkflowPos;
+    private static long activeWorkflowTick = -1L;
+    private static boolean activeWorkflowReadyForPlacement;
 
     public WaterGuide(SchematicBlockContext context) {
         super(context);
@@ -45,26 +50,32 @@ public class WaterGuide extends Guide {
 
     @Override
     protected boolean canExecute() {
-        return requiredState.is(Blocks.WATER) || requiredBlock instanceof BubbleColumnBlock;
+        return BlockStateUtils.isWaterBlock(requiredState);
     }
 
     @Override
     protected Result onBuildAction(BlockMatchResult state) {
         cleanupExpiredBreaks();
+        cleanupExpiredWorkflow();
         if (client.gameMode == null || client.gameMode.getPlayerMode().isCreative()) {
+            clearWorkflowIfCurrent();
             return Result.SKIP;
         }
         if (shouldSkipWaterloggedTarget()) {
+            clearWorkflowIfCurrent();
             return Result.SKIP;
         }
         if (!Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()) {
+            clearWorkflowIfCurrent();
             return Result.SKIP;
         }
         if (currentBlock instanceof IceBlock) {
+            activateWorkflow(blockPos);
             if (isWaitingForWaterSync()) {
                 return Result.SKIP;
             }
             if (!canIceBecomeWaterSource()) {
+                clearWorkflowIfCurrent();
                 return Result.SKIP;
             }
             switchToNonSilkTouchPickaxe();
@@ -74,15 +85,94 @@ public class WaterGuide extends Guide {
         }
         if (BlockStateUtils.isCorrectWaterLevel(requiredState, currentState)) {
             clearWaitingForWaterSync();
+            if (isWaterloggedTarget()) {
+                markWorkflowReadyForPlacement();
+            } else {
+                clearWorkflowIfCurrent();
+            }
             return Result.PASS;
         }
         if (isWaitingForWaterSync()) {
+            activateWorkflow(blockPos);
             return Result.SKIP;
         }
+        if (isWaterloggedTarget() && !BlockStateUtils.isReplaceable(currentState)) {
+            clearWorkflowIfCurrent();
+            return Result.PASS;
+        }
         if (!canIceBecomeWaterSource()) {
+            clearWorkflowIfCurrent();
             return Result.SKIP;
         }
         return Result.success(new Action().setItem(Items.ICE).setSides(net.minecraft.core.Direction.DOWN));
+    }
+
+    @Override
+    protected Result onBuildActionCorrect(BlockMatchResult state) {
+        if (!isActiveWorkflowPos(blockPos)) {
+            return Result.PASS;
+        }
+        if (!isWaterloggedTarget()) {
+            clearWorkflowIfCurrent();
+            return Result.PASS;
+        }
+        boolean currentWaterlogged = currentState.hasProperty(BlockStateProperties.WATERLOGGED)
+                && currentState.getValue(BlockStateProperties.WATERLOGGED);
+        if (currentBlock == requiredBlock && !currentWaterlogged) {
+            if (InteractionUtils.canBreakBlock(blockPos)) {
+                InteractionUtils.INSTANCE.add(context);
+                return Result.SKIP;
+            }
+            clearWorkflowIfCurrent();
+            return Result.SKIP;
+        }
+        clearWorkflowIfCurrent();
+        return Result.PASS;
+    }
+
+    public static @Nullable BlockPos getActiveWorkflowPos() {
+        cleanupExpiredWorkflow();
+        return activeWorkflowPos;
+    }
+
+    public static boolean isActiveWorkflowPos(@Nullable BlockPos pos) {
+        cleanupExpiredWorkflow();
+        return pos != null && pos.equals(activeWorkflowPos);
+    }
+
+    public static boolean isWorkflowReadyForPlacement(@Nullable BlockPos pos) {
+        cleanupExpiredWorkflow();
+        return activeWorkflowReadyForPlacement && pos != null && pos.equals(activeWorkflowPos);
+    }
+
+    public static void activateWorkflow(BlockPos pos) {
+        if (pos == null) {
+            return;
+        }
+        BlockPos immutablePos = pos.immutable();
+        if (!immutablePos.equals(activeWorkflowPos)) {
+            activeWorkflowPos = immutablePos;
+            activeWorkflowTick = ClientPlayerTickManager.getCurrentHandlerTime();
+        }
+        activeWorkflowReadyForPlacement = false;
+    }
+
+    public static void completeWorkflow(@Nullable BlockPos pos) {
+        if (pos != null && pos.equals(activeWorkflowPos)) {
+            clearWorkflow();
+        }
+    }
+
+    public static boolean isWorkflowPlacementAction(SchematicBlockContext context, Action action) {
+        if (context == null || action == null || !BlockStateUtils.isWaterBlock(context.requiredState)) {
+            return false;
+        }
+        for (Item item : action.getRequiredItems(context.requiredState.getBlock())) {
+            if (item == Items.ICE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -106,7 +196,13 @@ public class WaterGuide extends Guide {
                 && requiredState.getValue(BlockStateProperties.WATERLOGGED);
     }
 
+    private boolean isWaterloggedTarget() {
+        return requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
+                && requiredState.getValue(BlockStateProperties.WATERLOGGED);
+    }
+
     private void markWaitingForWaterSync() {
+        activateWorkflow(blockPos);
         RECENTLY_BROKEN_ICE.put(blockPos.immutable(), ClientPlayerTickManager.getCurrentHandlerTime());
     }
 
@@ -128,6 +224,33 @@ public class WaterGuide extends Guide {
                 iterator.remove();
             }
         }
+    }
+
+    private void markWorkflowReadyForPlacement() {
+        activateWorkflow(blockPos);
+        activeWorkflowReadyForPlacement = true;
+    }
+
+    private void clearWorkflowIfCurrent() {
+        if (blockPos.equals(activeWorkflowPos)) {
+            clearWorkflow();
+        }
+    }
+
+    private static void cleanupExpiredWorkflow() {
+        if (activeWorkflowPos == null) {
+            return;
+        }
+        long currentTick = ClientPlayerTickManager.getCurrentHandlerTime();
+        if (activeWorkflowTick >= 0L && currentTick - activeWorkflowTick >= WATER_WORKFLOW_TIMEOUT_TICKS) {
+            clearWorkflow();
+        }
+    }
+
+    private static void clearWorkflow() {
+        activeWorkflowPos = null;
+        activeWorkflowTick = -1L;
+        activeWorkflowReadyForPlacement = false;
     }
 
     private void switchToNonSilkTouchPickaxe() {
