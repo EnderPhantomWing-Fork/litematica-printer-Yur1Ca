@@ -9,20 +9,22 @@ import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
-import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -103,6 +105,63 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     @Override
+    protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        int maxTotalIterations = this.getMaxTotalIterationsPerTick();
+        int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
+        Iterator<BlockPos> source = playerInteractionBox.iterator();
+
+        return () -> new Iterator<>() {
+            private BlockPos next;
+            private boolean prepared;
+            private boolean scanLimitHit;
+            private boolean sentinelReturned;
+            private int scanned;
+
+            private void prepare() {
+                if (this.prepared) {
+                    return;
+                }
+
+                this.prepared = true;
+                while (source.hasNext() && this.scanned < scanLimit) {
+                    BlockPos candidate = source.next();
+                    this.scanned++;
+                    if (isMineScanCandidate(candidate)) {
+                        this.next = candidate;
+                        return;
+                    }
+                }
+
+                this.scanLimitHit = source.hasNext() && this.scanned >= scanLimit;
+            }
+
+            @Override
+            public boolean hasNext() {
+                this.prepare();
+                return this.next != null || (this.scanLimitHit && !this.sentinelReturned);
+            }
+
+            @Override
+            public BlockPos next() {
+                this.prepare();
+                if (this.next != null) {
+                    BlockPos result = this.next;
+                    this.next = null;
+                    this.prepared = false;
+                    return result;
+                }
+
+                if (this.scanLimitHit && !this.sentinelReturned) {
+                    this.sentinelReturned = true;
+                    return null;
+                }
+
+                return null;
+            }
+        };
+    }
+
+    @Override
     protected void preprocess() {
         this.candidates.clear();
         int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
@@ -117,11 +176,7 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     public boolean canIterationBlockPos(BlockPos pos) {
-        return !CooldownUtils.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)
-                && !InteractionUtils.INSTANCE.isRecentlyBroken(pos)
-                && !InteractionUtils.INSTANCE.isPendingDelayedDestroy(pos)
-                && InteractionUtils.canBreakBlock(pos)
-                && mineRestriction(level.getBlockState(pos));
+        return this.isMineScanCandidate(pos);
     }
 
     @Override
@@ -173,6 +228,31 @@ public class MineHandler extends ClientPlayerTickHandler {
                 && this.canReachIterationPosition(pos)
                 && InteractionUtils.canBreakBlock(pos)
                 && mineRestriction(this.level.getBlockState(pos));
+    }
+
+    private boolean isMineScanCandidate(BlockPos pos) {
+        if (pos == null || this.level == null || this.player == null || this.gameMode == null) {
+            return false;
+        }
+
+        if (this.isBlockPosOnCooldown(pos)
+                || InteractionUtils.INSTANCE.isRecentlyBroken(pos)
+                || InteractionUtils.INSTANCE.isPendingDelayedDestroy(pos)) {
+            return false;
+        }
+
+        BlockState state = this.level.getBlockState(pos);
+        if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
+            return false;
+        }
+
+        if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue() && state.getBlock().defaultDestroyTime() < 0) {
+            return false;
+        }
+
+        return this.canReachIterationPosition(pos)
+                && !this.player.blockActionRestricted(this.level, pos, this.gameMode.getPlayerMode())
+                && mineRestriction(state);
     }
 
     private Comparator<MineBreakExecutor.Target> createTargetComparator() {
