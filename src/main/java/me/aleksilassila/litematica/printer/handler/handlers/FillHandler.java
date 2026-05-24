@@ -99,9 +99,9 @@ public class FillHandler extends ClientPlayerTickHandler {
     public boolean canIterationBlockPos(BlockPos blockPos) {
         if (Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD) {
             ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
-            return !heldStack.isEmpty() && heldStack.getCount() > 0;
+            return !heldStack.isEmpty() && heldStack.getCount() > 0 && this.isFillTarget(blockPos);
         }
-        return true;
+        return this.isFillTarget(blockPos);
     }
 
     @Override
@@ -117,34 +117,43 @@ public class FillHandler extends ClientPlayerTickHandler {
         }
         boolean handheld = Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD;
         BlockState currentState = level.getBlockState(blockPos);
-        if (currentState.isAir()
-                || (currentState.getBlock() instanceof LiquidBlock)
-                || Configs.Print.REPLACEABLE_LIST.getStrings().stream().anyMatch(s -> FilterUtils.matchName(s, currentState))
-        ) {
-            if (!handheld && !InventoryUtils.switchToItems(player, this.fillModeItemList)) {
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "缺少填充材料");
-                return;
-            }
-            Action action;
-            if (ConfigUtils.getFillModeFacing() != null) {
-                action = new Action()
-                        .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
-                        .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
-            } else {
-                action = new Action()
-                        .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
-            }
-            ActionManager.INSTANCE.setLook(action.getPlayerLook());
-            HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
-            HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);
-            if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook){
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "等待转头");
-                skipIteration.set(true);
-            } else {
-                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "运行中");
-            }
-            this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+        if (!this.isFillTarget(currentState)) {
+            setIterationConsumedEffectiveExecution(false);
+            return;
         }
+        if (!handheld && !InventoryUtils.switchToItems(player, this.fillModeItemList)) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "缺少填充材料");
+            return;
+        }
+        Action action;
+        if (ConfigUtils.getFillModeFacing() != null) {
+            action = new Action()
+                    .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
+                    .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
+        } else {
+            action = new Action()
+                    .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
+        }
+        ActionManager.INSTANCE.setLook(action.getPlayerLook());
+        HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FILL, blockPos, currentState);
+        HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FILL, 1);
+        if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook){
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FILL, "等待转头");
+            skipIteration.set(true);
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "运行中");
+        }
+        this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+    }
+
+    private boolean isFillTarget(BlockPos blockPos) {
+        return this.level != null && this.isFillTarget(this.level.getBlockState(blockPos));
+    }
+
+    private boolean isFillTarget(BlockState currentState) {
+        return currentState.isAir()
+                || currentState.getBlock() instanceof LiquidBlock
+                || Configs.Print.REPLACEABLE_LIST.getStrings().stream().anyMatch(s -> FilterUtils.matchName(s, currentState));
     }
 
 }
