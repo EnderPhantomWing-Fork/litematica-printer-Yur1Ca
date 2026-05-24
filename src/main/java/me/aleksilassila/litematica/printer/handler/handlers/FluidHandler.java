@@ -85,27 +85,39 @@ public class FluidHandler extends ClientPlayerTickHandler {
     }
 
     @Override
+    public boolean canIterationBlockPos(BlockPos blockPos) {
+        return this.isTargetFluid(blockPos);
+    }
+
+    @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         FluidState fluidState = level.getBlockState(blockPos).getFluidState();
-        if (fluids.contains(fluidState.getType())) {
-            if (!Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() && !fluidState.isSource()) {
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "跳过流动流体");
-                return;
-            }
-            if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "缺少流体填充方块");
-                return;
-            }
-            new Action().queueAction(blockPos, Direction.UP, false, player);
-            HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, level.getBlockState(blockPos));
-            HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
-            if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");
-                skipIteration.set(true);
-            } else {
-                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
-            }
-            setBlockPosCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
+        if (!this.isTargetFluid(fluidState)) {
+            setIterationConsumedEffectiveExecution(false);
+            return;
         }
+        if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "缺少流体填充方块");
+            return;
+        }
+        new Action().queueAction(blockPos, Direction.UP, false, player);
+        HudStatsManager.INSTANCE.trackExpectedBlockChange(HudStatsManager.Mode.FLUID, blockPos, level.getBlockState(blockPos));
+        HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.FLUID, 1);
+        if (ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "等待转头");
+            skipIteration.set(true);
+        } else {
+            HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
+        }
+        setBlockPosCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
+    }
+
+    private boolean isTargetFluid(BlockPos blockPos) {
+        return this.level != null && this.isTargetFluid(this.level.getBlockState(blockPos).getFluidState());
+    }
+
+    private boolean isTargetFluid(FluidState fluidState) {
+        return fluids.contains(fluidState.getType())
+                && (Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() || fluidState.isSource());
     }
 }
