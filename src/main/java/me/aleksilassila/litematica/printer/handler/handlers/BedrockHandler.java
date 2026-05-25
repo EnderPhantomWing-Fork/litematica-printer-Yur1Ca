@@ -29,6 +29,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     private static final int CANDIDATE_SOFT_CAP = 256;
     private static final int CANDIDATE_COLLECT_CAP = CANDIDATE_SOFT_CAP * 4;
     private static final int UNLIMITED_SCAN_SLICE = 4096;
+    private static final int MAX_SCAN_SLICE = 32768;
 
     public BedrockHandler() {
         super("bedrock", PrintModeType.BEDROCK, Configs.Hotkeys.BEDROCK, null, true);
@@ -105,8 +106,7 @@ public class BedrockHandler extends ClientPlayerTickHandler {
     private CandidateShard collectCandidateShard(PrinterBox playerInteractionBox) {
         Iterator<BlockPos> iterator = playerInteractionBox.iterator();
         List<CandidateInfo> candidates = new ArrayList<>();
-        int configuredScanLimit = this.getMaxTotalIterationsPerTick();
-        int scanLimit = configuredScanLimit > 0 ? configuredScanLimit : UNLIMITED_SCAN_SLICE;
+        int scanLimit = this.getCandidateScanLimit();
         boolean sideCandidatesOnly = BedrockController.shouldOnlySubmitSideCandidates();
         int scanned = 0;
 
@@ -144,6 +144,15 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     private int getCandidateSelectionLimit() {
         return Math.max(1, Math.min(CANDIDATE_SOFT_CAP, this.getMaxEffectiveExecutionsPerTick()));
+    }
+
+    private int getCandidateScanLimit() {
+        int configuredScanLimit = this.getMaxTotalIterationsPerTick();
+        int baseScanLimit = configuredScanLimit > 0 ? configuredScanLimit : UNLIMITED_SCAN_SLICE;
+        BedrockController.HudSnapshot snapshot = BedrockController.getHudSnapshot();
+        int activeDeficit = Math.max(1, snapshot.activeCap() - snapshot.activeTargets());
+        long expandedScanLimit = (long) baseScanLimit * activeDeficit;
+        return (int) Math.max(1L, Math.min(MAX_SCAN_SLICE, expandedScanLimit));
     }
 
     @Override

@@ -237,7 +237,8 @@ public class Render2D {
                 + " | 成功速率 " + formatRate(snapshot.ratePerSecond()) + "/s", new Color(120, 255, 170, 255)));
         lines.add(new HudLine("成功 " + bedrock.confirmedSuccesses()
                 + " | 失败 " + totalFailures
-                + " | 活跃 " + bedrock.activeTargets() + "/" + bedrock.totalTargets()
+                + " | 垂直 " + bedrock.verticalActiveTargets() + "/" + bedrock.verticalActiveCap()
+                + " | 水平 " + bedrock.sideTargets() + "/" + bedrock.sideCap()
                 + " | 清理 " + bedrock.cleanupQueueSize()
                 + " | 压力 " + bedrock.cleanupPressure(), new Color(255, 255, 255, 255)));
         lines.add(new HudLine("吞吐 " + bedrock.configuredThroughput()
@@ -408,6 +409,7 @@ public class Render2D {
             case "accept_backpressure" -> "接受背压";
             case "submit_cap" -> "提交上限";
             case "active_cap" -> "活跃上限";
+            case "side_lane_busy" -> "水平通道占用";
             case "retry_cooldown" -> "重试冷却";
             case "reserved_by_active_target" -> "被活跃任务占位";
             case "out_of_range_bedrock", "out_of_range_machine", "out_of_range" -> "超出交互范围";

@@ -36,8 +36,7 @@ public final class BedrockController {
     private static final int BASE_CLEANUP_LIMIT_PER_TICK = 48;
     private static final int BLOCKED_CLEANUP_BONUS_LIMIT = 32;
     private static final int ACCEPT_BACKPRESSURE_TICKS = 1;
-    private static final int MAX_ACTIVE_TARGETS = 3;
-    private static final int MAX_SUBMITS_PER_TICK = 2;
+    private static final int SIDE_TARGET_CAP = 1;
     private static final int HOTSPOT_SKIP_PENALTY = 120;
     private static final List<BedrockTarget> TARGETS = new ArrayList<>();
     private static final Set<BlockPos> CLEANUP_QUEUE = new LinkedHashSet<>();
@@ -130,11 +129,15 @@ public final class BedrockController {
         if (BedrockDebugLog.isEnabled() && !TARGETS.isEmpty()) {
             BedrockDebugLog.write("controller tick targets=" + TARGETS.size()
                     + " active=" + countActiveTargets()
+                    + " verticalActive=" + countVerticalActiveTargets()
+                    + " sideTargets=" + countSideTargets()
                     + " cleanup=" + CLEANUP_QUEUE.size()
                     + " cleanupPressure=" + cleanupPressureThisTick
                     + " throughput=" + getConfiguredThroughput()
                     + " budget=" + executeBudget
                     + " activeCap=" + getActiveTargetCap()
+                    + " verticalActiveCap=" + getVerticalActiveTargetCap()
+                    + " sideCap=" + SIDE_TARGET_CAP
                     + " submitCap=" + getSubmitCap()
                     + " nextExecuteTick=" + nextExecuteTick
                     + " nextAcceptTick=" + nextAcceptTick
@@ -238,7 +241,7 @@ public final class BedrockController {
     }
 
     public static boolean shouldOnlySubmitSideCandidates() {
-        return countActiveTargets() >= getActiveTargetCap() && !hasSideExclusiveTarget();
+        return !canAcceptMoreVerticalTargets() && !hasSideExclusiveTarget();
     }
 
     public static boolean submit(BlockPos pos) {
@@ -636,6 +639,26 @@ public final class BedrockController {
         return count;
     }
 
+    private static int countVerticalActiveTargets() {
+        int count = 0;
+        for (BedrockTarget target : TARGETS) {
+            if (target != null && !target.isHorizontalLayout() && countsTowardsActiveCap(target.getStatus())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static int countSideTargets() {
+        int count = 0;
+        for (BedrockTarget target : TARGETS) {
+            if (target != null && target.isHorizontalLayout()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private static BedrockTarget findSideExclusiveTarget() {
         for (BedrockTarget target : TARGETS) {
             if (target != null && target.isHorizontalLayout()) {
@@ -659,13 +682,20 @@ public final class BedrockController {
     }
 
     private static int getActiveTargetCap() {
-        int throughput = getConfiguredThroughput();
-        return Math.max(1, Math.min(MAX_ACTIVE_TARGETS, (throughput + 2) / 2));
+        return getVerticalActiveTargetCap() + SIDE_TARGET_CAP;
+    }
+
+    private static int getVerticalActiveTargetCap() {
+        return Math.max(1, getConfiguredThroughput());
+    }
+
+    private static boolean canAcceptMoreVerticalTargets() {
+        return countVerticalActiveTargets() < getVerticalActiveTargetCap();
     }
 
     private static int getSubmitCap() {
         int throughput = getConfiguredThroughput();
-        int baseSubmitCap = throughput <= 2 ? 1 : MAX_SUBMITS_PER_TICK;
+        int baseSubmitCap = Math.max(1, throughput);
         if (cleanupPressureThisTick >= getHighCleanupPressureThreshold()) {
             return 1;
         }
@@ -729,6 +759,8 @@ public final class BedrockController {
                     + " breakBlocksPerTick=" + breakThroughput
                     + " bedrockInterval=" + bedrockInterval
                     + " activeCap=" + getActiveTargetCap()
+                    + " verticalActiveCap=" + getVerticalActiveTargetCap()
+                    + " sideCap=" + SIDE_TARGET_CAP
                     + " submitCap=" + getSubmitCap());
         }
     }
@@ -1079,10 +1111,10 @@ public final class BedrockController {
         if (acceptedThisTick >= getSubmitCap()) {
             return AcceptProbe.reject("submit_cap");
         }
-        if (countActiveTargets() >= getActiveTargetCap()) {
-            return hasSideExclusiveTarget() ? AcceptProbe.reject("active_cap") : AcceptProbe.accept();
+        if (canAcceptMoreVerticalTargets() || !hasSideExclusiveTarget()) {
+            return AcceptProbe.accept();
         }
-        return AcceptProbe.accept();
+        return AcceptProbe.reject("active_cap");
     }
 
     private static AcceptProbe probeCanAccept(BlockPos pos, boolean mutateExposureState) {
@@ -1097,10 +1129,11 @@ public final class BedrockController {
         if (isTargetOnRetryCooldown(stablePos)) {
             return AcceptProbe.reject("retry_cooldown");
         }
-        if (isHorizontalSubmission(stablePos) && hasSideExclusiveTarget()) {
+        boolean horizontalSubmission = isHorizontalSubmission(stablePos);
+        if (horizontalSubmission && hasSideExclusiveTarget()) {
             return AcceptProbe.reject("side_lane_busy");
         }
-        if (countActiveTargets() >= getActiveTargetCap() && !canBypassActiveCapForSide(stablePos)) {
+        if (!horizontalSubmission && !canAcceptMoreVerticalTargets()) {
             return AcceptProbe.reject("active_cap");
         }
         if (isReservedByActiveTarget(stablePos)) {
@@ -1147,14 +1180,6 @@ public final class BedrockController {
 
     private static BlockPos stablePos(BlockPos pos) {
         return pos == null ? null : pos.immutable();
-    }
-
-    private static boolean canBypassActiveCapForSide(BlockPos pos) {
-        SubmissionPlan plan = SUBMISSION_PLANS.get(pos);
-        return plan != null
-                && plan.layout() != null
-                && plan.layout().isHorizontal()
-                && !hasSideExclusiveTarget();
     }
 
     private static boolean isHorizontalSubmission(BlockPos pos) {
@@ -1273,6 +1298,8 @@ public final class BedrockController {
         return new HudSnapshot(
                 TARGETS.size(),
                 countActiveTargets(),
+                countVerticalActiveTargets(),
+                countSideTargets(),
                 CLEANUP_QUEUE.size(),
                 cleanupPressureThisTick,
                 blockedCleanupDemandThisTick,
@@ -1285,6 +1312,8 @@ public final class BedrockController {
                 getConfiguredThroughput(),
                 getSubmitCap(),
                 getActiveTargetCap(),
+                getVerticalActiveTargetCap(),
+                SIDE_TARGET_CAP,
                 successRate,
                 lastHudReason
         );
@@ -1293,6 +1322,8 @@ public final class BedrockController {
     public record HudSnapshot(
             int totalTargets,
             int activeTargets,
+            int verticalActiveTargets,
+            int sideTargets,
             int cleanupQueueSize,
             int cleanupPressure,
             int blockedCleanupDemand,
@@ -1305,6 +1336,8 @@ public final class BedrockController {
             int configuredThroughput,
             int submitCap,
             int activeCap,
+            int verticalActiveCap,
+            int sideCap,
             double successRate,
             String lastReason
     ) {
