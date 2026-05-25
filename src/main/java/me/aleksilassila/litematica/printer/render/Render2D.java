@@ -3,7 +3,6 @@ package me.aleksilassila.litematica.printer.render;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.WorkingModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
@@ -220,10 +219,16 @@ public class Render2D {
         }
         HudStatsManager.Snapshot snapshot = HudStatsManager.INSTANCE.snapshot(HudStatsManager.Mode.BEDROCK);
         BedrockController.HudSnapshot bedrock = BedrockController.getHudSnapshot();
-        String progressText = formatProgress(snapshot.finished(), snapshot.total(), snapshot.progress());
+        String progressText = formatProgress(
+                bedrock.confirmedSuccesses(),
+                bedrock.submittedTargets(),
+                bedrock.submittedTargets() > 0
+                        ? (double) bedrock.confirmedSuccesses() / (double) bedrock.submittedTargets()
+                        : 0.0D
+        );
         int totalFailures = bedrock.failedTargets() + bedrock.stuckTargets();
         String status = humanizeBedrockReason(bedrock.lastReason());
-        if (bedrock.totalTargets() <= 0 && snapshot.total() <= 0 && "运行中".equals(status)) {
+        if (bedrock.totalTargets() <= 0 && bedrock.submittedTargets() <= 0 && "运行中".equals(status)) {
             status = "无目标";
         }
 

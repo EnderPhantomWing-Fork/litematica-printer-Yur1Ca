@@ -48,10 +48,6 @@ public final class HudStatsManager {
         this.stats.get(mode).reset();
     }
 
-    public void recordProgress(Mode mode, long finished, long total) {
-        this.stats.get(mode).recordProgress(mode, ClientPlayerTickManager.getCurrentHandlerTime(), finished, total);
-    }
-
     public void recordRateUnit(Mode mode, int count) {
         if (count <= 0) {
             return;
@@ -229,20 +225,18 @@ public final class HudStatsManager {
             this.deferredCounter.reset();
         }
 
-        private void recordProgress(Mode mode, long tick, long finished, long total) {
-            this.finished = Math.max(0L, finished);
-            this.total = Math.max(0L, total);
-            this.progress = this.total > 0 ? (double) this.finished / (double) this.total : 0.0D;
-        }
-
         private void recordRateUnit(int count) {
+            this.total += count;
             this.rateCounter.add(count);
             this.lifetimeUnits += count;
+            this.updateProgress();
             this.lastReason = "运行中";
         }
 
         private void recordConfirmedUnit(long tick, int count) {
+            this.finished += count;
             this.completedCounter.add(count);
+            this.updateProgress();
             this.lastReason = "运行中";
         }
 
@@ -276,6 +270,10 @@ public final class HudStatsManager {
                     this.lifetimeDeferred,
                     this.lastReason
             );
+        }
+
+        private void updateProgress() {
+            this.progress = this.total > 0 ? (double) this.finished / (double) this.total : 0.0D;
         }
 
         private static String normalizeReason(String reason) {

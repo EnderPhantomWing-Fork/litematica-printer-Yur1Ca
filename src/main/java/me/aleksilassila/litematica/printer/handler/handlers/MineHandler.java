@@ -236,6 +236,9 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     private boolean isInsideToolSessionFrontier(MineBreakExecutor.Target target, double nearestDistance) {
+        if (this.remainingInstantBudget < 0) {
+            return true;
+        }
         double nearest = Math.sqrt(nearestDistance);
         double targetDistance = Math.sqrt(this.distanceScore(target));
         return targetDistance <= nearest + TOOL_SESSION_FRONTIER_MARGIN;

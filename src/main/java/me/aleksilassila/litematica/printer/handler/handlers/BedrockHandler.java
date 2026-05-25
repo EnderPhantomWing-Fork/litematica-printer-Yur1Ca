@@ -20,12 +20,15 @@ import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class BedrockHandler extends ClientPlayerTickHandler {
     private static final Direction[] NEIGHBOR_DIRECTIONS = Direction.values();
     private static final int CANDIDATE_SOFT_CAP = 256;
+    private static final int CANDIDATE_COLLECT_CAP = CANDIDATE_SOFT_CAP * 4;
+    private static final int UNLIMITED_SCAN_SLICE = 4096;
 
     public BedrockHandler() {
         super("bedrock", PrintModeType.BEDROCK, Configs.Hotkeys.BEDROCK, null, true);
@@ -70,69 +73,77 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             return List.of();
         }
 
-        PrinterBox scanBox = snapshotIterationBox(playerInteractionBox);
-        List<CandidateInfo> candidates = new ArrayList<>();
-        boolean sideCandidatesOnly = BedrockController.shouldOnlySubmitSideCandidates();
-        for (BlockPos pos : scanBox) {
-            if (pos == null || !BedrockEnvironment.canInteract(pos)) {
-                continue;
-            }
-            if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
-                continue;
-            }
-            if (!BedrockTargetBlocks.isTargetBlock(this.level.getBlockState(pos))) {
-                continue;
-            }
-            if (BedrockController.isPositionOnRetryCooldown(pos)) {
-                continue;
-            }
-            CandidateInfo candidate = buildCandidate(pos.immutable());
-            if (sideCandidatesOnly && (candidate.layout() == null || !candidate.layout().isHorizontal())) {
-                continue;
-            }
-            candidates.add(candidate);
-        }
+        CandidateShard shard = this.collectCandidateShard(playerInteractionBox);
+        List<CandidateInfo> candidates = shard.candidates();
 
         logIsolatedCandidateSummary(candidates);
 
+        List<CandidateInfo> selectedCandidates;
         if (candidates.size() <= 1) {
-            List<BlockPos> single = new ArrayList<>(candidates.size());
-            for (CandidateInfo candidate : candidates) {
-                BedrockController.primeSubmissionPlan(candidate.pos(), candidate.layout(), candidate.placement(), candidate.slimePos());
-                single.add(candidate.pos());
-            }
-            return single;
+            selectedCandidates = candidates;
+        } else {
+            candidates.sort(Comparator
+                    .comparingInt(CandidateInfo::priority)
+                    .thenComparingInt(CandidateInfo::neighborTargetCount));
+
+            int limit = Math.min(candidates.size(), this.getCandidateSelectionLimit());
+            selectedCandidates = selectNonConflictingCandidates(candidates, limit);
+            logIsolatedCandidateSelection(candidates, selectedCandidates, limit);
         }
 
-        candidates.sort(Comparator
-                .comparingInt(CandidateInfo::priority)
-                .thenComparingInt(CandidateInfo::neighborTargetCount));
-
-        int limit = Math.min(candidates.size(), CANDIDATE_SOFT_CAP);
-        List<CandidateInfo> selectedCandidates = selectNonConflictingCandidates(candidates, limit);
-        logIsolatedCandidateSelection(candidates, selectedCandidates, limit);
-        List<BlockPos> filtered = new ArrayList<>(selectedCandidates.size());
+        List<BlockPos> filtered = new ArrayList<>(selectedCandidates.size() + (shard.hasMoreSource() ? 1 : 0));
         for (CandidateInfo candidate : selectedCandidates) {
             BedrockController.primeSubmissionPlan(candidate.pos(), candidate.layout(), candidate.placement(), candidate.slimePos());
             filtered.add(candidate.pos());
         }
+        if (shard.hasMoreSource()) {
+            filtered.add(null);
+        }
         return filtered;
     }
 
-    private PrinterBox snapshotIterationBox(PrinterBox source) {
-        PrinterBox snapshot = new PrinterBox(
-                source.minX,
-                source.minY,
-                source.minZ,
-                source.maxX,
-                source.maxY,
-                source.maxZ
-        );
-        snapshot.iterationMode = source.iterationMode;
-        snapshot.xIncrement = source.xIncrement;
-        snapshot.yIncrement = source.yIncrement;
-        snapshot.zIncrement = source.zIncrement;
-        return snapshot;
+    private CandidateShard collectCandidateShard(PrinterBox playerInteractionBox) {
+        Iterator<BlockPos> iterator = playerInteractionBox.iterator();
+        List<CandidateInfo> candidates = new ArrayList<>();
+        int configuredScanLimit = this.getMaxTotalIterationsPerTick();
+        int scanLimit = configuredScanLimit > 0 ? configuredScanLimit : UNLIMITED_SCAN_SLICE;
+        boolean sideCandidatesOnly = BedrockController.shouldOnlySubmitSideCandidates();
+        int scanned = 0;
+
+        while (iterator.hasNext() && scanned < scanLimit && candidates.size() < CANDIDATE_COLLECT_CAP) {
+            BlockPos pos = iterator.next();
+            scanned++;
+            CandidateInfo candidate = this.tryBuildCandidate(pos, sideCandidatesOnly);
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
+        }
+
+        return new CandidateShard(candidates, iterator.hasNext());
+    }
+
+    private CandidateInfo tryBuildCandidate(BlockPos pos, boolean sideCandidatesOnly) {
+        if (pos == null || !BedrockEnvironment.canInteract(pos)) {
+            return null;
+        }
+        if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+            return null;
+        }
+        if (this.level == null || !BedrockTargetBlocks.isTargetBlock(this.level.getBlockState(pos))) {
+            return null;
+        }
+        if (BedrockController.isPositionOnRetryCooldown(pos)) {
+            return null;
+        }
+        CandidateInfo candidate = buildCandidate(pos.immutable());
+        if (sideCandidatesOnly && (candidate.layout() == null || !candidate.layout().isHorizontal())) {
+            return null;
+        }
+        return candidate;
+    }
+
+    private int getCandidateSelectionLimit() {
+        return Math.max(1, Math.min(CANDIDATE_SOFT_CAP, this.getMaxEffectiveExecutionsPerTick()));
     }
 
     @Override
@@ -425,6 +436,9 @@ public class BedrockHandler extends ClientPlayerTickHandler {
                 && placement != null
                 && placement.getTorchPos() != null
                 && BedrockEnvironment.getTorchInfluencePositions(pistonPos).contains(placement.getTorchPos());
+    }
+
+    private record CandidateShard(List<CandidateInfo> candidates, boolean hasMoreSource) {
     }
 
     private record CandidateInfo(
