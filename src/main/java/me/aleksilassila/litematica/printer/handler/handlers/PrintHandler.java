@@ -223,8 +223,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
             positions.add(this.sortedTargetQueue.removeFirst());
         }
         Iterator<BlockPos> iterator = playerInteractionBox.iterator();
-        while (iterator.hasNext() && positions.size() < collectLimit) {
-            positions.add(iterator.next());
+        int scanned = 0;
+        while (iterator.hasNext() && positions.size() < collectLimit && scanned < collectLimit) {
+            BlockPos candidate = iterator.next();
+            scanned++;
+            if (!schematic.getBlockState(candidate).isAir()) {
+                positions.add(candidate);
+            }
         }
         positions.sort(createPrintTargetComparator(schematic));
         this.sortedTargetQueue.addAll(positions);

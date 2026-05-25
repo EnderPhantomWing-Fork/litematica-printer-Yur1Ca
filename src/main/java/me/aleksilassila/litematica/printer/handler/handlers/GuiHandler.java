@@ -16,7 +16,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class GuiHandler extends ClientPlayerTickHandler {
@@ -51,60 +50,7 @@ public class GuiHandler extends ClientPlayerTickHandler {
         if (!this.shouldUseMineTargetScan()) {
             return super.getIterationPositions(playerInteractionBox);
         }
-
-        int maxTotalIterations = this.getMaxTotalIterationsPerTick();
-        int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
-        Iterator<BlockPos> source = playerInteractionBox.iterator();
-
-        return () -> new Iterator<>() {
-            private BlockPos next;
-            private boolean prepared;
-            private boolean scanLimitHit;
-            private boolean sentinelReturned;
-            private int scanned;
-
-            private void prepare() {
-                if (this.prepared) {
-                    return;
-                }
-
-                this.prepared = true;
-                while (source.hasNext() && this.scanned < scanLimit) {
-                    BlockPos candidate = source.next();
-                    this.scanned++;
-                    if (isMineProgressScanCandidate(candidate)) {
-                        this.next = candidate;
-                        return;
-                    }
-                }
-
-                this.scanLimitHit = source.hasNext() && this.scanned >= scanLimit;
-            }
-
-            @Override
-            public boolean hasNext() {
-                this.prepare();
-                return this.next != null || (this.scanLimitHit && !this.sentinelReturned);
-            }
-
-            @Override
-            public BlockPos next() {
-                this.prepare();
-                if (this.next != null) {
-                    BlockPos result = this.next;
-                    this.next = null;
-                    this.prepared = false;
-                    return result;
-                }
-
-                if (this.scanLimitHit && !this.sentinelReturned) {
-                    this.sentinelReturned = true;
-                    return null;
-                }
-
-                return null;
-            }
-        };
+        return this.getFilteredIterationPositions(playerInteractionBox, this::isMineProgressScanCandidate);
     }
 
     @Override

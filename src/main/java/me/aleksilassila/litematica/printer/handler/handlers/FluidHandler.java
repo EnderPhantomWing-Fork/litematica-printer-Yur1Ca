@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import net.minecraft.core.BlockPos;
@@ -82,6 +83,11 @@ public class FluidHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean canIterate() {
         return !fillItems.isEmpty() && !fluidBlocks.isEmpty();
+    }
+
+    @Override
+    protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        return this.getFilteredIterationPositions(playerInteractionBox, this::isTargetFluid);
     }
 
     @Override

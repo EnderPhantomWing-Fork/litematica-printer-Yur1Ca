@@ -28,6 +28,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.Iterator;
+import java.util.function.Predicate;
 
 public abstract class ClientPlayerTickHandler extends ConfigUtils {
     @Getter
@@ -162,9 +164,15 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 int maxTotalIter = this.getMaxTotalIterationsPerTick();
                 int totalIterCount = 0;
                 int effectiveExecCount = 0;
+                boolean trackGuiBlockInfo = this.shouldTrackGuiBlockInfo();
                 this.skipIteration.set(false);
-                this.guiBlockInfoQueue.clear(); // 重置渲染信息
-                this.renderIndex = 0;   // 重置渲染信息
+                if (trackGuiBlockInfo) {
+                    this.guiBlockInfoQueue.clear(); // 重置渲染信息
+                    this.renderIndex = 0;   // 重置渲染信息
+                } else if (!this.guiBlockInfoQueue.isEmpty()) {
+                    this.guiBlockInfoQueue.clear();
+                    this.renderIndex = 0;
+                }
                 Iterable<BlockPos> iterationPositions = this.getIterationPositions(playerInteractionBox);
                 for (BlockPos pos : iterationPositions) {
                     // 单Tick迭代次数限制：达到最大次数则终止循环（防主线程阻塞）
@@ -180,17 +188,15 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                         interrupt = true;
                         break;
                     }
-                    GuiBlockInfo gui;
-                    if (isSchematicBlockHandler()) {
-                        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
-                        gui = new GuiBlockInfo(level, schematic, pos);
-                    } else {
-                        gui = new GuiBlockInfo(level, null, pos);
-                    }
+                    GuiBlockInfo gui = this.createGuiBlockInfo(trackGuiBlockInfo, pos);
                     if (this.canReachIterationPosition(pos)) {
-                        gui.interacted = true;
+                        if (gui != null) {
+                            gui.interacted = true;
+                        }
                     } else {
-                        gui.interacted = false;
+                        if (gui != null) {
+                            gui.interacted = false;
+                        }
                         this.addGuiBlockInfoToQueue(gui);
                         continue;
                     }
@@ -204,16 +210,22 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                         continue;
                     }
                     if (selectionType != null && !ConfigUtils.isPositionInSelectionRange(player, pos, selectionType)) {
-                        gui.posInSelectionRange = false;
+                        if (gui != null) {
+                            gui.posInSelectionRange = false;
+                        }
                         this.addGuiBlockInfoToQueue(gui);
                         continue;
                     }
-                    gui.posInSelectionRange = true;
+                    if (gui != null) {
+                        gui.posInSelectionRange = true;
+                    }
                     // 方块迭代权限校验：子类可重写实现自定义过滤逻辑
                     if (this.canIterationBlockPos(pos) && !isBlockPosOnCooldown(pos)) {
                         this.iterationConsumedEffectiveExecution = true;
                         this.executeIteration(pos, this.skipIteration);
-                        gui.execute = true;
+                        if (gui != null) {
+                            gui.execute = true;
+                        }
                         boolean consumedEffectiveExecution = this.iterationConsumedEffectiveExecution;
                         if (this.skipIteration.get()
                                 || maxEffectiveExec > 0 && consumedEffectiveExecution && ++effectiveExecCount >= maxEffectiveExec) {
@@ -244,6 +256,21 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         return true;
     }
 
+    protected boolean shouldTrackGuiBlockInfo() {
+        return false;
+    }
+
+    @Nullable
+    private GuiBlockInfo createGuiBlockInfo(boolean enabled, BlockPos pos) {
+        if (!enabled) {
+            return null;
+        }
+        if (isSchematicBlockHandler()) {
+            WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+            return new GuiBlockInfo(level, schematic, pos);
+        }
+        return new GuiBlockInfo(level, null, pos);
+    }
 
     private void addGuiBlockInfoToQueue(GuiBlockInfo guiBlockInfo) {
         if (guiBlockInfo != null) {
@@ -321,6 +348,62 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
         return playerInteractionBox;
+    }
+
+    protected Iterable<BlockPos> getFilteredIterationPositions(PrinterBox playerInteractionBox, Predicate<BlockPos> candidatePredicate) {
+        int maxTotalIterations = this.getMaxTotalIterationsPerTick();
+        int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
+        Iterator<BlockPos> source = playerInteractionBox.iterator();
+
+        return () -> new Iterator<>() {
+            private BlockPos next;
+            private boolean prepared;
+            private boolean scanLimitHit;
+            private boolean sentinelReturned;
+            private int scanned;
+
+            private void prepare() {
+                if (this.prepared) {
+                    return;
+                }
+
+                this.prepared = true;
+                while (source.hasNext() && this.scanned < scanLimit) {
+                    BlockPos candidate = source.next();
+                    this.scanned++;
+                    if (candidatePredicate.test(candidate)) {
+                        this.next = candidate;
+                        return;
+                    }
+                }
+
+                this.scanLimitHit = source.hasNext() && this.scanned >= scanLimit;
+            }
+
+            @Override
+            public boolean hasNext() {
+                this.prepare();
+                return this.next != null || (this.scanLimitHit && !this.sentinelReturned);
+            }
+
+            @Override
+            public BlockPos next() {
+                this.prepare();
+                if (this.next != null) {
+                    BlockPos result = this.next;
+                    this.next = null;
+                    this.prepared = false;
+                    return result;
+                }
+
+                if (this.scanLimitHit && !this.sentinelReturned) {
+                    this.sentinelReturned = true;
+                    return null;
+                }
+
+                return null;
+            }
+        };
     }
 
     protected void preprocess() {

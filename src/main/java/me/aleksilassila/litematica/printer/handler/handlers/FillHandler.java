@@ -9,6 +9,7 @@ import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
@@ -93,6 +94,11 @@ public class FillHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean canIterate() {
         return fillModeItemList.length > 0;
+    }
+
+    @Override
+    protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
+        return this.getFilteredIterationPositions(playerInteractionBox, this::canIterationBlockPos);
     }
 
     @Override

@@ -24,7 +24,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -106,59 +105,7 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        int maxTotalIterations = this.getMaxTotalIterationsPerTick();
-        int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
-        Iterator<BlockPos> source = playerInteractionBox.iterator();
-
-        return () -> new Iterator<>() {
-            private BlockPos next;
-            private boolean prepared;
-            private boolean scanLimitHit;
-            private boolean sentinelReturned;
-            private int scanned;
-
-            private void prepare() {
-                if (this.prepared) {
-                    return;
-                }
-
-                this.prepared = true;
-                while (source.hasNext() && this.scanned < scanLimit) {
-                    BlockPos candidate = source.next();
-                    this.scanned++;
-                    if (isMineScanCandidate(candidate)) {
-                        this.next = candidate;
-                        return;
-                    }
-                }
-
-                this.scanLimitHit = source.hasNext() && this.scanned >= scanLimit;
-            }
-
-            @Override
-            public boolean hasNext() {
-                this.prepare();
-                return this.next != null || (this.scanLimitHit && !this.sentinelReturned);
-            }
-
-            @Override
-            public BlockPos next() {
-                this.prepare();
-                if (this.next != null) {
-                    BlockPos result = this.next;
-                    this.next = null;
-                    this.prepared = false;
-                    return result;
-                }
-
-                if (this.scanLimitHit && !this.sentinelReturned) {
-                    this.sentinelReturned = true;
-                    return null;
-                }
-
-                return null;
-            }
-        };
+        return this.getFilteredIterationPositions(playerInteractionBox, this::isMineScanCandidate);
     }
 
     @Override
