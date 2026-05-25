@@ -18,22 +18,6 @@ public class ModLoadUtils {
         return isLoadMod("quickshulker");
     }
 
-    public static boolean isBedrockMinerLoaded() {
-        //#if MC >= 11900
-        return isLoadMod("bedrockminer");
-        //#else
-        //$$ return false;
-        //#endif
-    }
-
-    public static boolean isBlockMinerLoaded() {
-        //#if MC >= 11605
-        return isLoadMod("blockminer");
-        //#else
-        //$$ return false;
-        //#endif
-    }
-
     public static boolean isTweakerooLoaded() {
         return isLoadMod("tweakeroo");
     }

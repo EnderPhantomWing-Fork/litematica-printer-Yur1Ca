@@ -8,7 +8,6 @@ import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.printer.zxy.utils.HighlightBlockRenderer;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
-import me.aleksilassila.litematica.printer.utils.mods.BedrockUtils;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 
 import static me.aleksilassila.litematica.printer.config.Configs.*;
@@ -52,12 +51,6 @@ public class InitHandler implements IInitializationHandler {
             if (!b.getBooleanValue()) {
                 ActionManager.INSTANCE.clearQueue();
                 BedrockController.reset();
-                if (ModLoadUtils.isBedrockMinerLoaded() || ModLoadUtils.isBlockMinerLoaded()) {
-                    if (BedrockUtils.isWorking()) {
-                        BedrockUtils.setWorking(false);
-                        BedrockUtils.setBedrockMinerFeatureEnable(true);
-                    }
-                }
             }
         });
 
@@ -65,12 +58,6 @@ public class InitHandler implements IInitializationHandler {
         Core.WORK_MODE_TYPE.setValueChangeCallback(b -> {
             if (!b.getOptionListValue().equals(PrintModeType.BEDROCK)) {
                 BedrockController.reset();
-                if (ModLoadUtils.isBedrockMinerLoaded() || ModLoadUtils.isBlockMinerLoaded()) {
-                    if (BedrockUtils.isWorking()) {
-                        BedrockUtils.setWorking(false);
-                        BedrockUtils.setBedrockMinerFeatureEnable(true);
-                    }
-                }
             }
         });
 
