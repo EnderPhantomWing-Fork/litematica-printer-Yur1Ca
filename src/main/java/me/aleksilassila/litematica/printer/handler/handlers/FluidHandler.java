@@ -27,6 +27,7 @@ public class FluidHandler extends ClientPlayerTickHandler {
 
     private List<String> fillBlocks = new ArrayList<>();
     private List<Item> fillItems = new ArrayList<>();
+    private Item[] fillItemArray = new Item[0];
 
     private List<String> fluidBlocks = new ArrayList<>();
     private List<Fluid> fluids = List.of(new Fluid[0]);
@@ -58,6 +59,7 @@ public class FluidHandler extends ClientPlayerTickHandler {
                     fillItems.addAll(list);
                 }
             }
+            fillItemArray = fillItems.toArray(new Item[0]);
         }
         // 流体方块
         List<String> fluidBlocks = Configs.Fluid.FLUID_LIST.getStrings();
@@ -102,7 +104,7 @@ public class FluidHandler extends ClientPlayerTickHandler {
             setIterationConsumedEffectiveExecution(false);
             return;
         }
-        if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
+        if (!InventoryUtils.switchToItems(player, fillItemArray)) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.FLUID, "缺少流体填充方块");
             return;
         }

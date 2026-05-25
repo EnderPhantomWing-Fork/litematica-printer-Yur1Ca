@@ -40,15 +40,9 @@ public final class BedrockPlacer {
     public static boolean placeSimple(BlockPos supportPos, Direction clickedFace, Item item) {
         LocalPlayer player = CLIENT.player;
         if (player == null || CLIENT.gameMode == null) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=no_player_or_gamemode");
-            }
             return false;
         }
         if (!BedrockInventory.switchToOffhand(item)) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("placeSimple skipped support=" + BedrockDebugLog.pos(supportPos) + " item=" + item + " reason=missing_item");
-            }
             return false;
         }
         PlayerLook look = new PlayerLook(clickedFace.getOpposite());
@@ -56,12 +50,6 @@ public final class BedrockPlacer {
         // Use center of the support block for more reliable interaction
         BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(supportPos), clickedFace, supportPos, false);
         placeBlockAggressively(player, hitResult, true);
-        if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("placeSimple support=" + BedrockDebugLog.pos(supportPos)
-                    + " face=" + clickedFace
-                    + " item=" + item
-                    + " hitPos=" + hitResult.getBlockPos());
-        }
         return true;
     }
 
@@ -72,11 +60,6 @@ public final class BedrockPlacer {
     public static boolean preparePistonPlacementLook(BlockPos pistonPos, Direction facing) {
         LocalPlayer player = CLIENT.player;
         if (player == null || CLIENT.gameMode == null) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("preparePistonLook skipped piston=" + BedrockDebugLog.pos(pistonPos)
-                        + " facing=" + facing
-                        + " reason=no_player_or_gamemode");
-            }
             return false;
         }
 
@@ -88,16 +71,10 @@ public final class BedrockPlacer {
         LocalPlayer player = CLIENT.player;
         if (player == null || CLIENT.gameMode == null) {
             NetworkUtils.clearScopedLookOverride();
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=no_player_or_gamemode");
-            }
             return false;
         }
         if (!BedrockInventory.switchToOffhand(Blocks.PISTON.asItem())) {
             NetworkUtils.clearScopedLookOverride();
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("placePiston skipped piston=" + BedrockDebugLog.pos(pistonPos) + " facing=" + facing + " reason=missing_piston");
-            }
             return false;
         }
 
@@ -127,14 +104,6 @@ public final class BedrockPlacer {
 
         placeBlockAggressively(player, hitResult, false);
         NetworkUtils.clearScopedLookOverride();
-        if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("placePiston piston=" + BedrockDebugLog.pos(pistonPos)
-                    + " facing=" + facing
-                    + " clickedFace=" + clickedFace
-                    + " clickedBlock=" + BedrockDebugLog.pos(clickedPos)
-                    + " sentYaw=" + look.getYaw()
-                    + " sentPitch=" + look.getPitch());
-        }
         return true;
     }
 
@@ -185,13 +154,6 @@ public final class BedrockPlacer {
         pendingHorizontalPistonPlacements.put(pendingKey, new PendingHorizontalPlacement(facing, sentTick, packetEpoch));
         NetworkUtils.setScopedLookOverride(look);
         NetworkUtils.sendLookPacketIgnoringQueuedLook(player, look);
-        if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("preparePistonLook deferred piston=" + BedrockDebugLog.pos(pistonPos)
-                    + " facing=" + facing
-                    + " reason=horizontal_look_settle"
-                    + " sentTick=" + sentTick
-                    + " packetEpoch=" + packetEpoch);
-        }
         return true;
     }
 

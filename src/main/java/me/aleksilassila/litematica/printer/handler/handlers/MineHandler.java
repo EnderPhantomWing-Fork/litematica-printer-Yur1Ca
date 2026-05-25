@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
-import fi.dy.masa.malilib.config.IConfigOptionListEntry;
 import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
@@ -34,6 +33,7 @@ import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTR
 public class MineHandler extends ClientPlayerTickHandler {
     public static final String NAME = "mine";
     private static final double TOOL_SESSION_FRONTIER_MARGIN = 2.5D;
+    private static final RestrictionCache MINE_RESTRICTION_CACHE = new RestrictionCache();
 
     private final MineBreakExecutor analyzer = new MineBreakExecutor();
     private final List<MineBreakExecutor.Target> candidates = new ArrayList<>();
@@ -70,27 +70,24 @@ public class MineHandler extends ClientPlayerTickHandler {
         if (Configs.Mine.EXCAVATE_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             if (!ModLoadUtils.isTweakerooLoaded()) return true;
             UsageRestriction.ListType listType = BLOCK_TYPE_BREAK_RESTRICTION.getListType();
-            if (listType == UsageRestriction.ListType.BLACKLIST) {
-                return BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else if (listType == UsageRestriction.ListType.WHITELIST) {
-                return BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else {
-                return true;
-            }
-        } else {
-            IConfigOptionListEntry optionListValue = Configs.Mine.EXCAVATE_LIMIT.getOptionListValue();
-            if (optionListValue == UsageRestriction.ListType.BLACKLIST) {
-                return Configs.Mine.EXCAVATE_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else if (optionListValue == UsageRestriction.ListType.WHITELIST) {
-                return Configs.Mine.EXCAVATE_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else {
-                return true;
-            }
+            List<String> filters = listType == UsageRestriction.ListType.BLACKLIST
+                    ? BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings()
+                    : listType == UsageRestriction.ListType.WHITELIST
+                    ? BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings()
+                    : List.of();
+            return MINE_RESTRICTION_CACHE.allows("tweakeroo", listType, filters, blockState);
         }
+
+        Object optionListValue = Configs.Mine.EXCAVATE_LIMIT.getOptionListValue();
+        UsageRestriction.ListType listType = optionListValue instanceof UsageRestriction.ListType type
+                ? type
+                : UsageRestriction.ListType.NONE;
+        List<String> filters = listType == UsageRestriction.ListType.BLACKLIST
+                ? Configs.Mine.EXCAVATE_BLACKLIST.getStrings()
+                : listType == UsageRestriction.ListType.WHITELIST
+                ? Configs.Mine.EXCAVATE_WHITELIST.getStrings()
+                : List.of();
+        return MINE_RESTRICTION_CACHE.allows("custom", listType, filters, blockState);
     }
 
     @Override
@@ -353,6 +350,43 @@ public class MineHandler extends ClientPlayerTickHandler {
                 HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "挖掘中断");
             }
             case FAILED -> HudStatsManager.INSTANCE.recordFailure(HudStatsManager.Mode.MINE, "破坏失败");
+        }
+    }
+
+    private static final class RestrictionCache {
+        private String source = "";
+        private UsageRestriction.ListType listType = UsageRestriction.ListType.NONE;
+        private List<String> listCache = List.of();
+        private String[] filters = new String[0];
+
+        private boolean allows(String source, UsageRestriction.ListType listType, List<String> filters, BlockState blockState) {
+            this.update(source, listType, filters);
+            if (this.listType == UsageRestriction.ListType.BLACKLIST) {
+                return !this.matchesAny(blockState);
+            }
+            if (this.listType == UsageRestriction.ListType.WHITELIST) {
+                return this.matchesAny(blockState);
+            }
+            return true;
+        }
+
+        private void update(String source, UsageRestriction.ListType listType, List<String> filters) {
+            if (source.equals(this.source) && listType == this.listType && filters.equals(this.listCache)) {
+                return;
+            }
+            this.source = source;
+            this.listType = listType;
+            this.listCache = new ArrayList<>(filters);
+            this.filters = this.listCache.toArray(new String[0]);
+        }
+
+        private boolean matchesAny(BlockState blockState) {
+            for (String filter : this.filters) {
+                if (FilterUtils.matchBlockName(filter, blockState)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

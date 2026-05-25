@@ -24,17 +24,16 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
 
@@ -56,6 +55,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
     private final Deque<BlockPos> sortedTargetQueue = new ArrayDeque<>();
     private PrinterBox sortedTargetBox;
     private boolean hasMoreSortedIterationPositions;
+    private List<String> printSkipListCache = List.of();
+    private String[] printSkipFilters = new String[0];
 
     public PrintHandler() {
         super(NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
@@ -78,6 +79,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
     @Override
     protected boolean isSchematicBlockHandler() {
         return true;
+    }
+
+    @Override
+    protected void preprocess() {
+        this.updatePrintSkipCache();
     }
 
     @Override
@@ -116,11 +122,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
             return false;
         }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
-        if (Configs.Print.PRINT_SKIP.getBooleanValue()) {
-            Set<String> skipSet = new HashSet<>(Configs.Print.PRINT_SKIP_LIST.getStrings()); // 转换为 HashSet
-            if (skipSet.stream().anyMatch(s -> FilterUtils.matchName(s, ctx.requiredState))) {
-                return false;
-            }
+        if (this.shouldSkipRequiredState(ctx.requiredState)) {
+            return false;
         }
 //        Action action = guide.getAction(ctx);
         Optional<Action> action = Guides.INSTANCE.buildAction(ctx);
@@ -128,6 +131,27 @@ public class PrintHandler extends ClientPlayerTickHandler {
             return false;
         this.action = action.get();
         return true;
+    }
+
+    private void updatePrintSkipCache() {
+        List<String> skipList = Configs.Print.PRINT_SKIP_LIST.getStrings();
+        if (skipList.equals(this.printSkipListCache)) {
+            return;
+        }
+        this.printSkipListCache = new ArrayList<>(skipList);
+        this.printSkipFilters = this.printSkipListCache.toArray(new String[0]);
+    }
+
+    private boolean shouldSkipRequiredState(BlockState requiredState) {
+        if (!Configs.Print.PRINT_SKIP.getBooleanValue() || this.printSkipFilters.length == 0) {
+            return false;
+        }
+        for (String filter : this.printSkipFilters) {
+            if (FilterUtils.matchName(filter, requiredState)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

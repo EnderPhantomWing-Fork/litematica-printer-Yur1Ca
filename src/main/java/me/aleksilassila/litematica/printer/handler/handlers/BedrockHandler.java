@@ -4,7 +4,6 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
-import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockDebugLog;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEnvironment;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockMachineLayout;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockInventory;
@@ -77,8 +76,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
         CandidateShard shard = this.collectCandidateShard(playerInteractionBox);
         List<CandidateInfo> candidates = shard.candidates();
 
-        logIsolatedCandidateSummary(candidates);
-
         List<CandidateInfo> selectedCandidates;
         if (candidates.size() <= 1) {
             selectedCandidates = candidates;
@@ -89,7 +86,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
             int limit = Math.min(candidates.size(), this.getCandidateSelectionLimit());
             selectedCandidates = selectNonConflictingCandidates(candidates, limit);
-            logIsolatedCandidateSelection(candidates, selectedCandidates, limit);
         }
 
         List<BlockPos> filtered = new ArrayList<>(selectedCandidates.size() + (shard.hasMoreSource() ? 1 : 0));
@@ -257,76 +253,6 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             selected.add(candidate);
         }
         return selected;
-    }
-
-    private void logIsolatedCandidateSummary(List<CandidateInfo> candidates) {
-        CandidateInfo isolated = findBestIsolatedCandidate(candidates);
-        if (isolated == null) {
-            return;
-        }
-        String acceptReason = BedrockController.debugCanAcceptReason(isolated.pos());
-        if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("isolated scan pos=" + BedrockDebugLog.pos(isolated.pos())
-                    + " priority=" + isolated.priority()
-                    + " neighbors=" + isolated.neighborTargetCount()
-                    + " layout=" + (isolated.layout() != null ? isolated.layout().getPistonOffset() : "null")
-                    + " piston=" + BedrockDebugLog.pos(isolated.layout() != null ? isolated.layout().getPistonPos() : null)
-                    + " torchSupport=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getSupportPos() : null)
-                    + " torch=" + BedrockDebugLog.pos(isolated.placement() != null ? isolated.placement().getTorchPos() : null)
-                    + " canAccept=" + acceptReason
-                    + " candidates=" + candidates.size());
-        }
-    }
-
-    private void logIsolatedCandidateSelection(List<CandidateInfo> candidates, List<CandidateInfo> selectedCandidates, int limit) {
-        CandidateInfo isolated = findBestIsolatedCandidate(candidates);
-        if (isolated == null) {
-            return;
-        }
-        int sortedIndex = candidates.indexOf(isolated);
-        int selectedIndex = selectedCandidates.indexOf(isolated);
-        String selectionReason = selectedIndex >= 0
-                ? "selected"
-                : findIsolationSelectionReason(isolated, selectedCandidates, limit);
-        if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("isolated selection pos=" + BedrockDebugLog.pos(isolated.pos())
-                    + " sortedIndex=" + sortedIndex
-                    + " selectedIndex=" + selectedIndex
-                    + " limit=" + limit
-                    + " selectedCount=" + selectedCandidates.size()
-                    + " reason=" + selectionReason);
-        }
-    }
-
-    private CandidateInfo findBestIsolatedCandidate(List<CandidateInfo> candidates) {
-        CandidateInfo best = null;
-        for (CandidateInfo candidate : candidates) {
-            if (candidate.neighborTargetCount() != 0) {
-                continue;
-            }
-            if (best == null
-                    || candidate.priority() < best.priority()
-                    || (candidate.priority() == best.priority()
-                    && candidate.pos().asLong() < best.pos().asLong())) {
-                best = candidate;
-            }
-        }
-        return best;
-    }
-
-    private String findIsolationSelectionReason(CandidateInfo isolated, List<CandidateInfo> selectedCandidates, int limit) {
-        if (limit <= 0) {
-            return "limit_zero";
-        }
-        if (selectedCandidates.size() >= limit) {
-            return "limit_reached";
-        }
-        for (CandidateInfo existing : selectedCandidates) {
-            if (candidatesConflict(isolated, existing)) {
-                return "conflict_with=" + BedrockDebugLog.pos(existing.pos());
-            }
-        }
-        return "not_selected_unknown";
     }
 
     private boolean conflictsWithSelected(CandidateInfo candidate, List<CandidateInfo> selected) {

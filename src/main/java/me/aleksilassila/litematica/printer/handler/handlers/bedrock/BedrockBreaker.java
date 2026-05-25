@@ -23,16 +23,10 @@ public final class BedrockBreaker {
 
     public static boolean breakBlock(BlockPos pos, Direction direction, boolean predictRemoval) {
         if (CLIENT.level == null || CLIENT.player == null) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=no_level_or_player");
-            }
             return false;
         }
         var state = CLIENT.level.getBlockState(pos);
         if (state.isAir()) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=air");
-            }
             return false;
         }
 
@@ -41,19 +35,7 @@ public final class BedrockBreaker {
                 ? BedrockInventory.switchToCleanupTool(state)
                 : BedrockInventory.switchToBestTool(state);
         if (!switched) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("break skipped pos=" + BedrockDebugLog.pos(pos) + " reason=missing_effective_tool");
-            }
             return false;
-        }
-
-        if (BedrockDebugLog.isEnabled()) {
-            BedrockDebugLog.write("break start pos=" + BedrockDebugLog.pos(pos)
-                    + " state=" + BedrockDebugLog.describeState(state)
-                    + " face=" + direction
-                    + " cleanupResidue=" + cleanupResidue
-                    + " tool=" + CLIENT.player.getMainHandItem().getItem()
-                    + " predictRemoval=" + predictRemoval);
         }
 
         if (CLIENT.gameMode instanceof MultiPlayerGameModeExtension gameModeExtension && !shouldPredictRemoval()) {
@@ -87,12 +69,6 @@ public final class BedrockBreaker {
         //#endif
 
         boolean allowPrediction = predictRemoval && shouldPredictRemoval();
-        if (predictRemoval && !allowPrediction) {
-            if (BedrockDebugLog.isEnabled()) {
-                BedrockDebugLog.write("break prediction suppressed pos=" + BedrockDebugLog.pos(pos)
-                        + " reason=server_rules");
-            }
-        }
         if (allowPrediction) {
             CLIENT.level.removeBlock(pos, false);
         }
