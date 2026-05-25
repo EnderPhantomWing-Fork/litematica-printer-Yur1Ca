@@ -18,6 +18,8 @@
   "litematica-printer.config.bedrockInterval.desc": "破基岩执行窗口的全局间隔时间(单位为游戏刻)。\n每次控制器消耗了破基岩吞吐预算后，会等待该间隔再开启下一轮执行。\n设为0则连续执行，设得越大整体越稳但越慢。",
   "litematica-printer.config.bedrockBlocksPerTick": "每刻破基岩方块数",
   "litematica-printer.config.bedrockBlocksPerTick.desc": "破基岩每游戏刻的吞吐上限。\n它会同时影响每刻可推进的目标数、每刻可新提交的目标数，以及允许并行活跃的目标数。\n数值越高通常越快，但也更容易出现清理堆积与机器重叠。",
+  "litematica-printer.config.bedrockAllowSide": "允许水平(side)方案",
+  "litematica-printer.config.bedrockAllowSide.desc": "允许破基岩在没有可用垂直方案时使用水平活塞方案。\n默认关闭以避免水平视角延迟拖慢多层破基岩；开启后也会优先等待可暴露的垂直方案。",
   "litematica-printer.config.bedrockWhitelist": "额外目标白名单",
   "litematica-printer.config.bedrockWhitelist.desc": "额外允许进入破基岩状态机的方块列表。\n可输入方块ID或当前语言的翻译名称，示例：§bminecraft:obsidian§r §b黑曜石§r。\n前缀添加§b#§r表示标签匹配，示例：§l#minecraft:dragon_immune§r。\n同时输入文本和过滤条件(英文逗号分隔)，示例：§l深板岩,c§r。\n其中“c”表示包含匹配，优先尝试拼音或直接匹配。",
   "litematica-printer.config.breakInterval": "挖掘间隔时间",

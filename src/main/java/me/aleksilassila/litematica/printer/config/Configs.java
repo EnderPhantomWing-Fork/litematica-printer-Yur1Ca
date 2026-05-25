@@ -426,12 +426,17 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 8)
                 .build();
 
+        public static final ConfigBoolean BEDROCK_ALLOW_SIDE = bool("bedrockAllowSide")
+                .defaultValue(false)
+                .build();
+
         public static final ConfigStringList BEDROCK_WHITELIST = stringList("bedrockWhitelist")
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 BEDROCK_INTERVAL,
                 BEDROCK_BLOCKS_PER_TICK,
+                BEDROCK_ALLOW_SIDE,
                 BEDROCK_WHITELIST
         );
     }

@@ -18,6 +18,8 @@
   "litematica-printer.config.bedrockInterval.desc": "Global interval for bedrock execution windows (in game ticks).\nAfter the controller consumes bedrock throughput budget, it waits this many ticks before opening the next execution window.\nSet to 0 for continuous execution; higher values are safer but slower.",
   "litematica-printer.config.bedrockBlocksPerTick": "Bedrock Tasks Per Tick",
   "litematica-printer.config.bedrockBlocksPerTick.desc": "Bedrock throughput limit per game tick.\nThis directly controls how many targets can advance per tick, how many new targets may be submitted per tick, and how many targets may stay active in parallel.\nHigher values are usually faster, but also increase cleanup pressure and machine overlap risk.",
+  "litematica-printer.config.bedrockAllowSide": "Allow Horizontal (Side) Layouts",
+  "litematica-printer.config.bedrockAllowSide.desc": "Allow bedrock breaking to use horizontal piston layouts when no vertical layout is available.\nDisabled by default to avoid horizontal look-settle delays slowing multi-layer jobs; when enabled, exposed vertical layouts are still preferred.",
   "litematica-printer.config.bedrockWhitelist": "Extra Target Whitelist",
   "litematica-printer.config.bedrockWhitelist.desc": "Additional blocks allowed into the bedrock-breaking state machine.\nCan input block ID or translated name in current language, example: §bminecraft:obsidian§r §bobsidian§r.\nPrefix §b#§r for tag matching, example: §l#minecraft:dragon_immune§r.\nInput text and filter conditions simultaneously (separated by English comma), example: §ldeepslate,c§r.\nWhere \"c\" represents contains matching, prioritizing pinyin or direct matching.",
   "litematica-printer.config.breakInterval": "Mining Interval",

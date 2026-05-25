@@ -101,24 +101,32 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     private CandidateShard collectCandidateShard(PrinterBox playerInteractionBox) {
         Iterator<BlockPos> iterator = playerInteractionBox.iterator();
-        List<CandidateInfo> candidates = new ArrayList<>();
+        List<CandidateInfo> verticalCandidates = new ArrayList<>();
+        List<CandidateInfo> sideCandidates = new ArrayList<>();
         int scanLimit = this.getCandidateScanLimit();
-        boolean sideCandidatesOnly = BedrockController.shouldOnlySubmitSideCandidates();
+        boolean allowSide = Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
         int scanned = 0;
 
-        while (iterator.hasNext() && scanned < scanLimit && candidates.size() < CANDIDATE_COLLECT_CAP) {
+        while (iterator.hasNext()
+                && scanned < scanLimit
+                && verticalCandidates.size() + sideCandidates.size() < CANDIDATE_COLLECT_CAP) {
             BlockPos pos = iterator.next();
             scanned++;
-            CandidateInfo candidate = this.tryBuildCandidate(pos, sideCandidatesOnly);
+            CandidateInfo candidate = this.tryBuildCandidate(pos, allowSide);
             if (candidate != null) {
-                candidates.add(candidate);
+                if (candidate.layout() != null && candidate.layout().isHorizontal()) {
+                    sideCandidates.add(candidate);
+                } else {
+                    verticalCandidates.add(candidate);
+                }
             }
         }
 
+        List<CandidateInfo> candidates = verticalCandidates.isEmpty() ? sideCandidates : verticalCandidates;
         return new CandidateShard(candidates, iterator.hasNext());
     }
 
-    private CandidateInfo tryBuildCandidate(BlockPos pos, boolean sideCandidatesOnly) {
+    private CandidateInfo tryBuildCandidate(BlockPos pos, boolean allowSide) {
         if (pos == null || !BedrockEnvironment.canInteract(pos)) {
             return null;
         }
@@ -132,8 +140,13 @@ public class BedrockHandler extends ClientPlayerTickHandler {
             return null;
         }
         CandidateInfo candidate = buildCandidate(pos.immutable());
-        if (sideCandidatesOnly && (candidate.layout() == null || !candidate.layout().isHorizontal())) {
+        if (candidate.layout() == null) {
             return null;
+        }
+        if (candidate.layout().isHorizontal()) {
+            if (!allowSide) {
+                return null;
+            }
         }
         return candidate;
     }

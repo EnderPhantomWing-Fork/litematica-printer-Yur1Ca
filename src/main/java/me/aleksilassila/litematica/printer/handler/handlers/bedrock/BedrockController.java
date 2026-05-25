@@ -199,10 +199,6 @@ public final class BedrockController {
         return getSchedulingPenalty(pos) >= HOTSPOT_SKIP_PENALTY;
     }
 
-    public static boolean shouldOnlySubmitSideCandidates() {
-        return !canAcceptMoreVerticalTargets() && !hasSideExclusiveTarget();
-    }
-
     public static boolean submit(BlockPos pos) {
         BlockPos stablePos = stablePos(pos);
         ClientLevel level = CLIENT.level;
@@ -568,11 +564,19 @@ public final class BedrockController {
     }
 
     private static int getActiveTargetCap() {
-        return getVerticalActiveTargetCap() + SIDE_TARGET_CAP;
+        return getVerticalActiveTargetCap() + getSideTargetCap();
     }
 
     private static int getVerticalActiveTargetCap() {
         return Math.max(1, getConfiguredThroughput());
+    }
+
+    private static int getSideTargetCap() {
+        return isSideEnabled() ? SIDE_TARGET_CAP : 0;
+    }
+
+    private static boolean isSideEnabled() {
+        return Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
     }
 
     private static boolean canAcceptMoreVerticalTargets() {
@@ -953,7 +957,10 @@ public final class BedrockController {
         if (acceptedThisTick >= getSubmitCap()) {
             return AcceptProbe.reject("submit_cap");
         }
-        if (canAcceptMoreVerticalTargets() || !hasSideExclusiveTarget()) {
+        if (canAcceptMoreVerticalTargets()) {
+            return AcceptProbe.accept();
+        }
+        if (isSideEnabled() && !hasSideExclusiveTarget()) {
             return AcceptProbe.accept();
         }
         return AcceptProbe.reject("active_cap");
@@ -972,6 +979,9 @@ public final class BedrockController {
             return AcceptProbe.reject("retry_cooldown");
         }
         boolean horizontalSubmission = isHorizontalSubmission(stablePos);
+        if (horizontalSubmission && !isSideEnabled()) {
+            return AcceptProbe.reject("side_disabled");
+        }
         if (horizontalSubmission && hasSideExclusiveTarget()) {
             return AcceptProbe.reject("side_lane_busy");
         }
@@ -1143,7 +1153,7 @@ public final class BedrockController {
                 getSubmitCap(),
                 getActiveTargetCap(),
                 getVerticalActiveTargetCap(),
-                SIDE_TARGET_CAP,
+                getSideTargetCap(),
                 successRate,
                 lastHudReason
         );

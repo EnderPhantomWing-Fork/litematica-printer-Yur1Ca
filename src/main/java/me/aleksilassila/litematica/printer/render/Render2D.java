@@ -409,6 +409,7 @@ public class Render2D {
             case "accept_backpressure" -> "接受背压";
             case "submit_cap" -> "提交上限";
             case "active_cap" -> "活跃上限";
+            case "side_disabled" -> "水平通道关闭";
             case "side_lane_busy" -> "水平通道占用";
             case "retry_cooldown" -> "重试冷却";
             case "reserved_by_active_target" -> "被活跃任务占位";
