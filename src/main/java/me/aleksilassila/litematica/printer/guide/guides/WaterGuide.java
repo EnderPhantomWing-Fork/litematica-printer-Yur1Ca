@@ -59,7 +59,7 @@ public class WaterGuide extends Guide {
         cleanupExpiredWorkflow();
         if (client.gameMode == null || client.gameMode.getPlayerMode().isCreative()) {
             clearWorkflowIfCurrent();
-            return Result.SKIP;
+            return isWaterloggedTarget() ? Result.PASS : Result.SKIP;
         }
         if (shouldSkipWaterloggedTarget()) {
             clearWorkflowIfCurrent();
@@ -67,7 +67,7 @@ public class WaterGuide extends Guide {
         }
         if (!Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()) {
             clearWorkflowIfCurrent();
-            return Result.SKIP;
+            return isWaterloggedTarget() ? Result.PASS : Result.SKIP;
         }
         if (currentBlock instanceof IceBlock) {
             activateWorkflow(blockPos);
@@ -95,6 +95,10 @@ public class WaterGuide extends Guide {
         if (isWaitingForWaterSync()) {
             activateWorkflow(blockPos);
             return Result.SKIP;
+        }
+        if (isWaterloggedTarget() && !canStartIceWaterWorkflow()) {
+            clearWorkflowIfCurrent();
+            return Result.PASS;
         }
         if (isWaterloggedTarget() && !BlockStateUtils.isReplaceable(currentState)) {
             clearWorkflowIfCurrent();
@@ -190,6 +194,14 @@ public class WaterGuide extends Guide {
         //#endif
     }
 
+    private boolean canStartIceWaterWorkflow() {
+        return hasIceForWaterWorkflow() && canIceBecomeWaterSource();
+    }
+
+    private boolean hasIceForWaterWorkflow() {
+        return client.player != null && client.player.getInventory().countItem(Items.ICE) > 0;
+    }
+
     private boolean shouldSkipWaterloggedTarget() {
         return Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue()
                 && requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
@@ -272,6 +284,9 @@ public class WaterGuide extends Guide {
 
     private boolean isNonSilkTouchPickaxe(ItemStack stack) {
         if (stack.isEmpty()) {
+            return false;
+        }
+        if (!InteractionUtils.isToolAllowedByDurabilityProtection(stack)) {
             return false;
         }
         String itemPath = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();

@@ -113,6 +113,9 @@ final class MineBreakExecutor {
     }
 
     private float getDestroyProgress(LocalPlayer player, BlockState state, ItemStack stack) {
+        if (!InteractionUtils.isToolAllowedByDurabilityProtection(stack)) {
+            return 0.0F;
+        }
         float hardness = state.getBlock().defaultDestroyTime();
         if (hardness < 0.0F) {
             return 0.0F;

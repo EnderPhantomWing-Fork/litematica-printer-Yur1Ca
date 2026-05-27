@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -160,7 +161,8 @@ public final class BedrockInventory {
     }
 
     private static boolean isAllowedBedrockTool(ItemStack stack, BlockState blockState) {
-        if (stack.isEmpty() || blockState == null || blockState.isAir()) {
+        if (stack.isEmpty() || blockState == null || blockState.isAir()
+                || !InteractionUtils.isToolAllowedByDurabilityProtection(stack)) {
             return false;
         }
 

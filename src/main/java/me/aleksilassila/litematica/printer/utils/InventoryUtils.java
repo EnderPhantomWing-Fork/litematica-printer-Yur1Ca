@@ -408,7 +408,9 @@ public class InventoryUtils {
 
         Inventory inventory = player.getInventory();
         ItemStack currentStack = player.getMainHandItem();
-        float currentProgress = getDestroyProgress(player, blockState, currentStack);
+        float currentProgress = InteractionUtils.isToolAllowedByDurabilityProtection(currentStack)
+                ? getDestroyProgress(player, blockState, currentStack)
+                : 0.0F;
         float bestProgress = currentProgress;
         int bestSlot = -1;
         ItemStack bestStack = ItemStack.EMPTY;
@@ -416,7 +418,7 @@ public class InventoryUtils {
         NonNullList<ItemStack> stacks = getMainStacks(inventory);
         for (int slot = 0; slot < stacks.size(); slot++) {
             ItemStack stack = stacks.get(slot);
-            if (stack.isEmpty()) {
+            if (stack.isEmpty() || !InteractionUtils.isToolAllowedByDurabilityProtection(stack)) {
                 continue;
             }
             float progress = getDestroyProgress(player, blockState, stack);

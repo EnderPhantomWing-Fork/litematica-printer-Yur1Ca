@@ -369,6 +369,10 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         if (!allowToolSwitch || !InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
             ensureHasSentCarriedItem();
         }
+        if (!InteractionUtils.protectCurrentToolBeforeBreak()) {
+            return BlockBreakResult.FAILED;
+        }
+        ensureHasSentCarriedItem();
 
         float destroyProgress = blockState.getDestroyProgress(player, level, blockPos);
         boolean fastPath = player.getAbilities().instabuild || destroyProgress >= MINE_FAST_FINISH_PROGRESS;
@@ -466,6 +470,11 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         }
         if (allowToolSwitch) {
             InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState);
+        }
+        ensureHasSentCarriedItem();
+        if (!InteractionUtils.protectCurrentToolBeforeBreak()) {
+            MineDebugLog.write("mine break failed pos=" + MineDebugLog.pos(blockPos) + " reason=tool_durability_protected");
+            return BlockBreakResult.FAILED;
         }
         ensureHasSentCarriedItem();
         boolean useDelayedDestroy = forceDelayedDestroy || Configs.Break.BREAK_USE_DELAYED_DESTROY.getBooleanValue();

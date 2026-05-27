@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
+import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -35,6 +36,9 @@ public final class BedrockBreaker {
                 ? BedrockInventory.switchToCleanupTool(state)
                 : BedrockInventory.switchToBestTool(state);
         if (!switched) {
+            return false;
+        }
+        if (!InteractionUtils.protectCurrentToolBeforeBreak()) {
             return false;
         }
 

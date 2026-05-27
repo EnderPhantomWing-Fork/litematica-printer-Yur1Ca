@@ -18,6 +18,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -102,6 +103,22 @@ public class InteractionUtils {
             return true;
         }
         return false;
+    }
+
+    public static boolean isToolAllowedByDurabilityProtection(ItemStack stack) {
+        return !TweakerooUtils.isToolTooDamagedForBreaking(stack);
+    }
+
+    public static boolean protectCurrentToolBeforeBreak() {
+        LocalPlayer player = client.player;
+        if (player == null || player.getAbilities().instabuild) {
+            return true;
+        }
+        if (isToolAllowedByDurabilityProtection(player.getMainHandItem())) {
+            return true;
+        }
+        TweakerooUtils.trySwapCurrentToolIfNearlyBroken();
+        return isToolAllowedByDurabilityProtection(player.getMainHandItem());
     }
 
     public void add(BlockPos pos) {
