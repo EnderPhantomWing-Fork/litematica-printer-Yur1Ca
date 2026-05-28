@@ -2,8 +2,8 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class FluidHandler extends ClientPlayerTickHandler {
+public class FluidHandler extends Module {
     public final static String NAME = "fluid";
 
     private List<String> fillBlocks = new ArrayList<>();

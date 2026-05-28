@@ -4,8 +4,9 @@ import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.TickContext;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -30,7 +31,7 @@ import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRIC
 import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST;
 import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTRICTION;
 
-public class MineHandler extends ClientPlayerTickHandler {
+public class MineHandler extends Module {
     public static final String NAME = "mine";
     private static final double TOOL_SESSION_FRONTIER_MARGIN = 2.5D;
     private static final RestrictionCache MINE_RESTRICTION_CACHE = new RestrictionCache();
@@ -50,13 +51,18 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     public void tick() {
+        this.tick(TickContext.capture());
+    }
+
+    @Override
+    public void tick(TickContext context) {
         if (!ConfigUtils.isEnable() || !ConfigUtils.isMineMode()) {
             this.analyzer.reset();
             this.activeMinePos = null;
             this.sessionToolItem = null;
             this.toolSessionRemaining = 0;
         }
-        super.tick();
+        super.tick(context);
     }
 
     public int getRetryQueueSize() {

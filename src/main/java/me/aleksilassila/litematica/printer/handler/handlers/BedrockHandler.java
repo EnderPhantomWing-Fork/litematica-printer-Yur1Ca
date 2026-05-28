@@ -2,7 +2,7 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockEnvironment;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockMachineLayout;
@@ -23,7 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class BedrockHandler extends ClientPlayerTickHandler {
+public class BedrockHandler extends Module {
     private static final Direction[] NEIGHBOR_DIRECTIONS = Direction.values();
     private static final int CANDIDATE_SOFT_CAP = 256;
     private static final int CANDIDATE_COLLECT_CAP = CANDIDATE_SOFT_CAP * 4;

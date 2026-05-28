@@ -6,9 +6,7 @@ import lombok.Setter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.*;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
-import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem;
@@ -17,12 +15,12 @@ import static me.aleksilassila.litematica.printer.printer.zxy.inventory.Inventor
 public class ClientPlayerTickManager {
     public static final Minecraft mc = Minecraft.getInstance();
 
-    public static final GuiHandler GUI = new GuiHandler();
-    public static final PrintHandler PRINT = new PrintHandler();
-    public static final FillHandler FILL = new FillHandler();
-    public static final MineHandler MINE = new MineHandler();
-    public static final FluidHandler FLUID = new FluidHandler();
-    public static final BedrockHandler BEDROCK = new BedrockHandler();
+    public static final GuiHandler GUI = Modules.GUI;
+    public static final PrintHandler PRINT = Modules.PRINT;
+    public static final FillHandler FILL = Modules.FILL;
+    public static final MineHandler MINE = Modules.MINE;
+    public static final FluidHandler FLUID = Modules.FLUID;
+    public static final BedrockHandler BEDROCK = Modules.BEDROCK;
 
     @Getter
     @Setter
@@ -31,58 +29,37 @@ public class ClientPlayerTickManager {
     private static int packetEpoch;
     private static String lastPauseReason;
 
-    public static final ImmutableList<ClientPlayerTickHandler> VALUES = ImmutableList.of(
-            GUI, PRINT, FILL, FLUID, MINE, BEDROCK
-    );
+    public static final ImmutableList<Module> VALUES = Modules.VALUES;
 
     public static void tick() {
         if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
             HudStatsManager.INSTANCE.resetAll();
             lastPauseReason = null;
         }
-        boolean openHandler = isOpenHandler;
-        boolean switchingItem = switchItem();
-        if (openHandler || switchingItem) {
-            pause("shared_precheck openHandler=" + openHandler + " switchingItem=" + switchingItem);
+        if (pauseForInventoryState("shared_precheck")) {
             return;
         }
-        if (ActionManager.INSTANCE.needWaitModifyLook) {
-            pause("send_queue_wait_modify_look");
+        if (pauseForPendingLookQueue()) {
             ActionManager.INSTANCE.sendQueue(mc.player);
             return;
         }
-        if (Configs.Core.LAG_CHECK.getBooleanValue()) {
-            if (packetTick > Configs.Core.LAG_CHECK_MAX.getIntegerValue()) {
-                pause("lag_check packetTick=" + packetTick + " max=" + Configs.Core.LAG_CHECK_MAX.getIntegerValue());
-                return;
-            }
-            packetTick++;
+        if (pauseForLagCheck()) {
+            return;
         }
+        TickContext context = TickContext.capture();
         resume();
-        for (ClientPlayerTickHandler handler : VALUES) {
+        for (Module handler : VALUES) {
             if (!(handler instanceof GuiHandler)) {
-                // 同TICK不同处理程序进行二次迭代检查, 避免独立的处理程序修改了内容没有及时跳出导致出现资源抢占问题
-                openHandler = isOpenHandler;
-                switchingItem = switchItem();
-                if (openHandler || switchingItem) {
-                    pause("handler_precheck handler=" + handler.getId()
-                            + " openHandler=" + openHandler
-                            + " switchingItem=" + switchingItem);
-                    return;
-                }
-                // 有任务需要修改视角强制退出
-                if (ActionManager.INSTANCE.needWaitModifyLook) {
-                    pause("action_wait_modify_look handler=" + handler.getId());
+                if (pauseForHandlerPrecheck(handler)) {
                     return;
                 }
             }
-            handler.tick();
+            handler.tick(context);
         }
     }
 
     public static long getCurrentHandlerTime() {
-        ClientLevel level = Minecraft.getInstance().level;
-        return level == null ? 0L : level.getGameTime();
+        return TickContext.currentGameTime();
     }
 
     public static void recordInboundPacket() {
@@ -106,5 +83,46 @@ public class ClientPlayerTickManager {
             MineDebugLog.write("scheduler resume after=" + lastPauseReason + " packetTick=" + packetTick);
             lastPauseReason = null;
         }
+    }
+
+    private static boolean pauseForInventoryState(String reasonPrefix) {
+        boolean openHandler = isOpenHandler;
+        boolean switchingItem = switchItem();
+        if (openHandler || switchingItem) {
+            pause(reasonPrefix + " openHandler=" + openHandler + " switchingItem=" + switchingItem);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean pauseForPendingLookQueue() {
+        if (!ActionManager.INSTANCE.needWaitModifyLook) {
+            return false;
+        }
+        pause("send_queue_wait_modify_look");
+        return true;
+    }
+
+    private static boolean pauseForLagCheck() {
+        if (!Configs.Core.LAG_CHECK.getBooleanValue()) {
+            return false;
+        }
+        if (packetTick > Configs.Core.LAG_CHECK_MAX.getIntegerValue()) {
+            pause("lag_check packetTick=" + packetTick + " max=" + Configs.Core.LAG_CHECK_MAX.getIntegerValue());
+            return true;
+        }
+        packetTick++;
+        return false;
+    }
+
+    private static boolean pauseForHandlerPrecheck(Module handler) {
+        if (pauseForInventoryState("handler_precheck handler=" + handler.getId())) {
+            return true;
+        }
+        if (ActionManager.INSTANCE.needWaitModifyLook) {
+            pause("action_wait_modify_look handler=" + handler.getId());
+            return true;
+        }
+        return false;
     }
 }

@@ -8,9 +8,9 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.guide.guides.WaterGuide;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
+import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -37,7 +37,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
 
-public class PrintHandler extends ClientPlayerTickHandler {
+public class PrintHandler extends Module {
     public final static String NAME = "print";
 
     @Getter
