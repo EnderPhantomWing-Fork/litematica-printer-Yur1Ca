@@ -32,7 +32,7 @@ public class PrintTaskController {
             return result;
         }
 
-        PrintTask task = WaterPrintTask.tryCreate(context);
+        PrintTask task = PrintTasks.tryCreate(context);
         if (task == null) {
             return PrintTaskBuildResult.PASS;
         }
