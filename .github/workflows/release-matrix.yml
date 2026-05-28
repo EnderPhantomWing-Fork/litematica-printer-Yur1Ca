@@ -162,7 +162,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build-all-wrapper
-          path: fabricWrapper/build/libs/*.jar
+          path: |
+            fabricWrapper/build/libs/*.jar
+            fabricWrapper/build/libs/jars/*.jar
           retention-days: 7
 
   publish:

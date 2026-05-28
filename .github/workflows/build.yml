@@ -11,23 +11,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      targets: ${{ steps.targets.outputs.targets }}
-    steps:
-      - id: targets
-        shell: bash
-        run: |
-          echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4"]' >> "$GITHUB_OUTPUT"
-
   build:
-    needs: plan
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        version: ${{ fromJson(needs.plan.outputs.targets) }}
     steps:
       - uses: actions/checkout@v6
 
@@ -62,21 +47,33 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ./.gradle
-          key: ${{ runner.os }}-gradle-${{ matrix.version }}
+            ./libs
+          key: ${{ runner.os }}-gradle-wrapper
           restore-keys: |
             ${{ runner.os }}-gradle-
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build ${{ matrix.version }}
-        run: ./gradlew :${{ matrix.version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
-        env:
-          TARGET_MC_VERSIONS: ${{ matrix.version }}
+      - name: Build all versions wrapper
+        run: ./gradlew :fabricWrapper:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
 
-      - name: Capture build artifacts
+      - name: Delete wrapper sources jar
+        run: |
+          find fabricWrapper/build/libs/ -name "*-sources.jar" -delete
+
+      - name: Capture versionpack artifact
         uses: actions/upload-artifact@v7
         with:
-          name: build-${{ matrix.version }}
-          path: versions/${{ matrix.version }}/build/libs/*.jar
+          name: versionpack
+          path: fabricWrapper/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Capture standalone version jars
+        uses: actions/upload-artifact@v7
+        with:
+          name: version-jars
+          path: fabricWrapper/build/libs/jars/*.jar
+          if-no-files-found: error
           retention-days: 1
