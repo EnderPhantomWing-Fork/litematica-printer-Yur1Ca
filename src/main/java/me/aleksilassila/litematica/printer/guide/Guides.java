@@ -17,7 +17,7 @@ public class Guides {
 
     private Guides() {
         // ============================================================
-        // 水源处理指南（破冰放水逻辑，仅处理 WATER 方块，比 SkipGuide 优先级高）
+        // 水源/含水方块兜底规则（跨 tick 破冰放水流程由 PrintTaskController 处理）
         // ============================================================
         register(WaterGuide.class);
 

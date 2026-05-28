@@ -7,10 +7,12 @@ import lombok.Setter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
-import me.aleksilassila.litematica.printer.guide.guides.WaterGuide;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskAction;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskBuildResult;
+import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskController;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -49,8 +51,11 @@ public class PrintHandler extends Module {
     private boolean printerMemorySync;
 
     private Action action;
+    @Nullable
+    private PrintTaskAction printTaskAction;
 
     private SchematicBlockContext ctx;
+    private final PrintTaskController printTasks = new PrintTaskController();
 
     private final Deque<BlockPos> sortedTargetQueue = new ArrayDeque<>();
     private PrinterBox sortedTargetBox;
@@ -88,19 +93,19 @@ public class PrintHandler extends Module {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        BlockPos activeWaterWorkflowPos = WaterGuide.getActiveWorkflowPos();
-        if (activeWaterWorkflowPos != null) {
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        BlockPos activeTaskPos = this.printTasks.getActiveTargetPos(level, schematic);
+        if (activeTaskPos != null) {
             this.sortedTargetQueue.clear();
             this.sortedTargetBox = null;
             this.hasMoreSortedIterationPositions = false;
-            return List.of(activeWaterWorkflowPos);
+            return List.of(activeTaskPos);
         }
         if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
             this.sortedTargetQueue.clear();
             this.sortedTargetBox = null;
             return playerInteractionBox;
         }
-        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null || player == null) {
             this.sortedTargetQueue.clear();
             this.sortedTargetBox = null;
@@ -116,20 +121,32 @@ public class PrintHandler extends Module {
 
     @Override
     public boolean canIterationBlockPos(BlockPos blockPos) {
+        this.action = null;
+        this.printTaskAction = null;
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
-        if (InteractionUtils.INSTANCE.isRecentlyBroken(blockPos) && !WaterGuide.isActiveWorkflowPos(blockPos)) {
+        if (InteractionUtils.INSTANCE.isRecentlyBroken(blockPos) && !this.printTasks.isActiveTaskPos(blockPos)) {
             return false;
         }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
         if (this.shouldSkipRequiredState(ctx.requiredState)) {
             return false;
         }
+        PrintTaskBuildResult taskResult = this.printTasks.buildAction(ctx);
+        if (taskResult.handled()) {
+            if (!taskResult.hasAction()) {
+                return false;
+            }
+            this.action = taskResult.action();
+            this.printTaskAction = taskResult.actionHandle();
+            return true;
+        }
 //        Action action = guide.getAction(ctx);
         Optional<Action> action = Guides.INSTANCE.buildAction(ctx);
         if (action.isEmpty())
             return false;
         this.action = action.get();
+        this.printTaskAction = this.printTasks.createActionHandle(ctx, this.action);
         return true;
     }
 
@@ -156,11 +173,14 @@ public class PrintHandler extends Module {
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        boolean waterWorkflowStartAction = WaterGuide.isWorkflowPlacementAction(this.ctx, this.action);
-        boolean waterWorkflowFinalPlacement = WaterGuide.isWorkflowReadyForPlacement(blockPos) && !waterWorkflowStartAction;
+        PrintTaskAction taskAction = this.printTaskAction;
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
+                if (taskAction != null) {
+                    this.printTasks.onActionFailure(taskAction, this.ctx, this.action);
+                    skipIteration.set(taskAction.stopIterationAfterAction());
+                }
                 HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "下落方块无支撑");
                 MessageUtils.setOverlayMessage(I18n.FALLING_BLOCK_NO_SUPPORT.getName(ctx.requiredBlockName().getString()));
                 setIterationConsumedEffectiveExecution(false);
@@ -169,12 +189,20 @@ public class PrintHandler extends Module {
         }
         Direction side = action.getValidSide(level, blockPos);
         if (side == null) {
+            if (taskAction != null) {
+                this.printTasks.onActionFailure(taskAction, this.ctx, this.action);
+                skipIteration.set(taskAction.stopIterationAfterAction());
+            }
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "无有效放置面");
             setIterationConsumedEffectiveExecution(false);
             return;
         }
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
         if (!InventoryUtils.switchToItems(player, reqItems)) {
+            if (taskAction != null) {
+                this.printTasks.onActionFailure(taskAction, this.ctx, this.action);
+                skipIteration.set(taskAction.stopIterationAfterAction());
+            }
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
             setIterationConsumedEffectiveExecution(false);
             return;
@@ -210,11 +238,11 @@ public class PrintHandler extends Module {
         }
         boolean needWaitModifyLook = ActionManager.INSTANCE.sendQueue(player).needWaitModifyLook;
         if (!needWaitModifyLook) {
-            if (waterWorkflowStartAction) {
-                WaterGuide.activateWorkflow(blockPos);
-            } else if (waterWorkflowFinalPlacement) {
-                WaterGuide.completeWorkflow(blockPos);
+            if (taskAction != null) {
+                this.printTasks.onActionSuccess(taskAction, this.ctx, this.action);
             }
+        } else if (taskAction != null) {
+            this.printTasks.onActionQueued(taskAction, this.ctx, this.action);
         }
         if (needWaitModifyLook) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待转头");
@@ -222,7 +250,7 @@ public class PrintHandler extends Module {
         } else {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
         }
-        if (waterWorkflowStartAction || waterWorkflowFinalPlacement) {
+        if (taskAction != null && taskAction.stopIterationAfterAction()) {
             skipIteration.set(true);
         }
         int cooldownTicks = action.getCooldownTicksOverride() >= 0
@@ -233,7 +261,7 @@ public class PrintHandler extends Module {
 
     @Override
     public boolean isBlockPosOnCooldown(@Nullable BlockPos pos) {
-        if (WaterGuide.isActiveWorkflowPos(pos)) {
+        if (this.printTasks.isActiveTaskPos(pos)) {
             return false;
         }
         return super.isBlockPosOnCooldown(pos);

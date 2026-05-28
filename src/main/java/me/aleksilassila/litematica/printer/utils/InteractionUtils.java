@@ -305,6 +305,31 @@ public class InteractionUtils {
         return this.continueDestroyBlockWithoutTracking(blockPos, Direction.DOWN);
     }
 
+    public BlockBreakResult continueDestroyBlockWithoutToolSwitch(BlockPos blockPos, Direction direction, boolean trackBreakPos) {
+        MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
+        if (gameMode == null) {
+            return BlockBreakResult.FAILED;
+        }
+        BlockBreakResult result = gameMode.litematica_printer$continueDestroyBlock(
+                !Configs.Break.BREAK_USE_PACKET.getBooleanValue(),
+                blockPos,
+                direction,
+                this.forceDelayedDestroy,
+                false
+        );
+        if (trackBreakPos && result == BlockBreakResult.IN_PROGRESS) {
+            breakPos = blockPos;
+        }
+        if (result != BlockBreakResult.IN_PROGRESS) {
+            this.forceDelayedDestroy = false;
+        }
+        return result;
+    }
+
+    public BlockBreakResult continueDestroyBlockWithoutToolSwitch(BlockPos blockPos, Direction direction) {
+        return this.continueDestroyBlockWithoutToolSwitch(blockPos, direction, true);
+    }
+
     public InteractionResult useItemOn(boolean localPrediction, InteractionHand hand, BlockHitResult blockHit) {
         MultiPlayerGameModeExtension gameMode = (@Nullable MultiPlayerGameModeExtension) client.gameMode;
         return gameMode.litematica_printer$useItemOn(localPrediction, hand, blockHit);
