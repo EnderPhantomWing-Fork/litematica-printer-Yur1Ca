@@ -245,6 +245,10 @@ tasks {
 
         dependsOn("collectSubModules")
 
+        from(rootProject.file("src/main/resources/assets/$modId/lang")) {
+            into("assets/$modId/lang")
+        }
+
         val rootIcon = rootProject.file("src/main/resources/assets/$modId/icon.png")
         val resourcesFile = layout.projectDirectory.file("src/main/resources/assets/$wrapperModId/icon.png").asFile
         val buildIconFile = layout.buildDirectory.file("resources/main/assets/$wrapperModId/icon.png").get().asFile
