@@ -31,6 +31,8 @@ public class FillHandler extends Module {
     public final static String NAME = "fill";
 
     private List<String> fillCacheBlocklist = new ArrayList<>();
+    private List<String> replaceableListCache = List.of();
+    private String[] replaceableFilters = new String[0];
     @Getter
     private Item[] fillModeItemList = new Item[0];
 
@@ -50,6 +52,7 @@ public class FillHandler extends Module {
 
     @Override
     protected void preprocess() {
+        this.updateReplaceableFilterCache();
         FillBlockModeType fillMode = (FillBlockModeType) Configs.Fill.FILL_BLOCK_MODE.getOptionListValue();
         switch (fillMode) {
             case BLOCKLIST:
@@ -89,6 +92,15 @@ public class FillHandler extends Module {
         if (fillModeItemList.length == 0 && fillMode == FillBlockModeType.BLOCKLIST && !fillCacheBlocklist.isEmpty()) {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "列表无匹配方块");
         }
+    }
+
+    private void updateReplaceableFilterCache() {
+        List<String> replaceableList = Configs.Print.REPLACEABLE_LIST.getStrings();
+        if (replaceableList.equals(this.replaceableListCache)) {
+            return;
+        }
+        this.replaceableListCache = new ArrayList<>(replaceableList);
+        this.replaceableFilters = this.replaceableListCache.toArray(new String[0]);
     }
 
     @Override
@@ -157,9 +169,15 @@ public class FillHandler extends Module {
     }
 
     private boolean isFillTarget(BlockState currentState) {
-        return currentState.isAir()
-                || currentState.getBlock() instanceof LiquidBlock
-                || Configs.Print.REPLACEABLE_LIST.getStrings().stream().anyMatch(s -> FilterUtils.matchName(s, currentState));
+        if (currentState.isAir() || currentState.getBlock() instanceof LiquidBlock) {
+            return true;
+        }
+        for (String filter : this.replaceableFilters) {
+            if (FilterUtils.matchName(filter, currentState)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

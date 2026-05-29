@@ -9,13 +9,13 @@ import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.BlockStateUtils;
+import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -23,6 +23,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -32,7 +33,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Optional;
 
 public class WaterPrintTask implements PrintTask {
-    private static final int WATER_SYNC_WAIT_TICKS = 5;
     private static final int STALL_PADDING_TICKS = 8;
     private static final int MIN_STALL_TICKS = 12;
     private static final int MAX_STALL_TICKS = 40;
@@ -42,8 +42,8 @@ public class WaterPrintTask implements PrintTask {
     private BlockState lastState;
     private int stateTicks;
     private long stateTickTime = Long.MIN_VALUE;
-    private long brokenIceTick = Long.MIN_VALUE;
     private boolean icePlacementSent;
+    private boolean iceBreakSent;
     private boolean readyForPlacement;
     private boolean complete;
     private boolean aborted;
@@ -82,6 +82,7 @@ public class WaterPrintTask implements PrintTask {
         this.readyForPlacement = false;
         if (BlockStateUtils.isCorrectWaterLevel(requiredState, currentState)) {
             this.icePlacementSent = false;
+            this.iceBreakSent = false;
             this.refreshState(currentState);
             if (isWaterloggedTarget(requiredState)) {
                 this.readyForPlacement = true;
@@ -92,14 +93,16 @@ public class WaterPrintTask implements PrintTask {
             this.icePlacementSent = false;
             return !this.isStateStalled(level, currentState);
         }
-        if (this.isWaitingForWaterSync() || InteractionUtils.INSTANCE.isPendingDelayedDestroy(this.pos)) {
+        if (this.iceBreakSent || InteractionUtils.INSTANCE.isPendingDelayedDestroy(this.pos)) {
             this.refreshState(currentState);
-            return true;
+            return !this.isStateStalled(level, currentState);
         }
         if (this.icePlacementSent) {
             return !this.isStateStalled(level, currentState);
         }
-        if (isDryWaterloggedBlock(requiredState, currentState) && InteractionUtils.canBreakBlock(this.pos)) {
+        if (isDryWaterloggedBlock(requiredState, currentState)
+                && InteractionUtils.canBreakBlock(this.pos)
+                && canStartIceWaterWorkflow(level, this.pos)) {
             return !this.isStateStalled(level, currentState);
         }
         return BlockStateUtils.isReplaceable(currentState) && canStartIceWaterWorkflow(level, this.pos);
@@ -119,10 +122,15 @@ public class WaterPrintTask implements PrintTask {
             return this.breakBlockForWorkflow(context, true);
         }
         if (isDryWaterloggedBlock(context.requiredState, context.currentState)) {
+            if (!canStartIceWaterWorkflow(context.level, context.blockPos)) {
+                this.complete = true;
+                return PrintTaskBuildResult.SKIP;
+            }
             return this.breakBlockForWorkflow(context, false);
         }
         if (BlockStateUtils.isCorrectWaterLevel(context.requiredState, context.currentState)) {
             this.icePlacementSent = false;
+            this.iceBreakSent = false;
             if (isWaterloggedTarget(context.requiredState)) {
                 this.readyForPlacement = true;
                 this.refreshState(context.currentState);
@@ -131,7 +139,11 @@ public class WaterPrintTask implements PrintTask {
             this.complete = true;
             return PrintTaskBuildResult.SKIP;
         }
-        if (this.isWaitingForWaterSync() || InteractionUtils.INSTANCE.isPendingDelayedDestroy(this.pos)) {
+        if (this.iceBreakSent || InteractionUtils.INSTANCE.isPendingDelayedDestroy(this.pos)) {
+            if (this.isStateStalled(context.level, context.currentState)) {
+                this.aborted = true;
+                return PrintTaskBuildResult.PASS;
+            }
             this.refreshState(context.currentState);
             return PrintTaskBuildResult.SKIP;
         }
@@ -156,7 +168,7 @@ public class WaterPrintTask implements PrintTask {
             return isWaterloggedTarget(context.requiredState) ? PrintTaskBuildResult.PASS : PrintTaskBuildResult.SKIP;
         }
 
-        Action action = new Action().setItem(Items.ICE).setSides(Direction.DOWN);
+        Action action = new Action().setItem(Items.ICE).setRequiresSupport();
         return PrintTaskBuildResult.action(action, new WaterTaskAction(false));
     }
 
@@ -184,7 +196,7 @@ public class WaterPrintTask implements PrintTask {
                 : InteractionUtils.INSTANCE.continueDestroyBlockWithoutTracking(context.blockPos, Direction.DOWN);
         if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
             if (ice) {
-                this.markWaitingForWaterSync(context.currentState);
+                this.markIceBreakSent(context.currentState);
             } else {
                 this.refreshState(context.currentState);
             }
@@ -199,14 +211,9 @@ public class WaterPrintTask implements PrintTask {
         return PrintTaskBuildResult.PASS;
     }
 
-    private void markWaitingForWaterSync(BlockState currentState) {
+    private void markIceBreakSent(BlockState currentState) {
         this.refreshState(currentState);
-        this.brokenIceTick = ClientPlayerTickManager.getCurrentHandlerTime();
-    }
-
-    private boolean isWaitingForWaterSync() {
-        return this.brokenIceTick != Long.MIN_VALUE
-                && ClientPlayerTickManager.getCurrentHandlerTime() - this.brokenIceTick < WATER_SYNC_WAIT_TICKS;
+        this.iceBreakSent = true;
     }
 
     private void refreshState(BlockState currentState) {
@@ -242,31 +249,36 @@ public class WaterPrintTask implements PrintTask {
     }
 
     private boolean switchToNonSilkTouchBreakItem(Minecraft client) {
-        if (client.player == null) {
+        LocalPlayer player = client.player;
+        if (player == null) {
             return false;
         }
-        if (isNonSilkTouchBreakItem(client.player.getMainHandItem())) {
+        BlockState iceState = Blocks.ICE.defaultBlockState();
+        ItemStack currentStack = player.getMainHandItem();
+        if (isEffectiveNonSilkTouchBreakItem(player, iceState, currentStack)) {
             return true;
         }
-        Inventory inventory = client.player.getInventory();
-        int fallbackSlot = -1;
-        ItemStack fallbackStack = ItemStack.EMPTY;
+
+        Inventory inventory = player.getInventory();
+        int bestSlot = -1;
+        ItemStack bestStack = ItemStack.EMPTY;
+        float bestProgress = 0.0F;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (isNonSilkTouchPickaxe(stack)) {
-                InventoryUtils.setPickedItemToHand(slot, stack, client);
-                return true;
+            if (!isEffectiveNonSilkTouchBreakItem(player, iceState, stack)) {
+                continue;
             }
-            if (fallbackSlot < 0 && isNonSilkTouchBreakItem(stack)) {
-                fallbackSlot = slot;
-                fallbackStack = stack;
+            float progress = PlayerUtils.getDestroyProgress(player, iceState, stack);
+            if (progress > bestProgress) {
+                bestProgress = progress;
+                bestSlot = slot;
+                bestStack = stack;
             }
         }
-        if (fallbackSlot >= 0) {
-            InventoryUtils.setPickedItemToHand(fallbackSlot, fallbackStack, client);
-            return true;
+        if (bestSlot >= 0) {
+            return InventoryUtils.setPickedItemToHand(bestSlot, bestStack, client);
         }
-        return false;
+        return canBreakWithoutSilkTouch(currentStack);
     }
 
     private static boolean isCandidate(SchematicBlockContext context) {
@@ -286,7 +298,8 @@ public class WaterPrintTask implements PrintTask {
             return true;
         }
         if (isDryWaterloggedBlock(context.requiredState, context.currentState)) {
-            return InteractionUtils.canBreakBlock(context.blockPos);
+            return InteractionUtils.canBreakBlock(context.blockPos)
+                    && canStartIceWaterWorkflow(context.level, context.blockPos);
         }
         if (isWaterloggedTarget(context.requiredState) && !BlockStateUtils.isReplaceable(context.currentState)) {
             return false;
@@ -342,16 +355,14 @@ public class WaterPrintTask implements PrintTask {
         return BlockStateUtils.isCorrectWaterLevel(requiredState, currentState);
     }
 
-    private static boolean isNonSilkTouchPickaxe(ItemStack stack) {
-        if (stack.isEmpty() || !InteractionUtils.isToolAllowedByDurabilityProtection(stack)) {
-            return false;
-        }
-        String itemPath = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
-        return itemPath.endsWith("_pickaxe") && !hasSilkTouch(stack);
+    private static boolean isEffectiveNonSilkTouchBreakItem(LocalPlayer player, BlockState iceState, ItemStack stack) {
+        return canBreakWithoutSilkTouch(stack)
+                && !stack.isEmpty()
+                && PlayerUtils.getDestroyProgress(player, iceState, stack) > PlayerUtils.getDestroyProgress(player, iceState, ItemStack.EMPTY);
     }
 
-    private static boolean isNonSilkTouchBreakItem(ItemStack stack) {
-        return (stack.isEmpty() || !hasSilkTouch(stack))
+    private static boolean canBreakWithoutSilkTouch(ItemStack stack) {
+        return !hasSilkTouch(stack)
                 && InteractionUtils.isToolAllowedByDurabilityProtection(stack);
     }
 
@@ -385,6 +396,7 @@ public class WaterPrintTask implements PrintTask {
         public void onQueued(SchematicBlockContext context, Action action) {
             if (!this.finalPlacement) {
                 icePlacementSent = true;
+                iceBreakSent = false;
                 refreshState(context.currentState);
             }
         }

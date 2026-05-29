@@ -11,6 +11,10 @@ public class PrintTaskController {
     @Nullable
     private PrintTask activeTask;
 
+    public boolean hasActiveTask() {
+        return this.activeTask != null;
+    }
+
     @Nullable
     public BlockPos getActiveTargetPos(@Nullable ClientLevel level, @Nullable WorldSchematic schematic) {
         this.cleanup(level, schematic);

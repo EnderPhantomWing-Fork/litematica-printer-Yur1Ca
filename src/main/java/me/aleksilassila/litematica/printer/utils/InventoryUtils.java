@@ -458,6 +458,13 @@ public class InventoryUtils {
             ItemStack stack = new ItemStack(items[0]);
             return InventoryUtils.setPickedItemToHand(stack, client);
         }
+        ItemStack mainHandStack = player.getMainHandItem();
+        for (Item item : items) {
+            if (mainHandStack.getItem().equals(item)) {
+                orderlyStoreItem = mainHandStack;
+                return true;
+            }
+        }
         // 找到背包中可用的物品
         for (Item item : items) {
             int slot = -1;

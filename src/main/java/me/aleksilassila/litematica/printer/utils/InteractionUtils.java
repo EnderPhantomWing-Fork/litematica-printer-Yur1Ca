@@ -100,7 +100,7 @@ public class InteractionUtils {
         }
         if (ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isToolSwitchEnabled()) {
             TweakerooUtils.trySwitchToEffectiveTool(pos);
-            return true;
+            return protectCurrentToolBeforeBreak(blockState);
         }
         return false;
     }
@@ -110,6 +110,10 @@ public class InteractionUtils {
     }
 
     public static boolean protectCurrentToolBeforeBreak() {
+        return protectCurrentToolBeforeBreak(null);
+    }
+
+    public static boolean protectCurrentToolBeforeBreak(@Nullable BlockState blockState) {
         LocalPlayer player = client.player;
         if (player == null || player.getAbilities().instabuild) {
             return true;
@@ -118,7 +122,13 @@ public class InteractionUtils {
             return true;
         }
         TweakerooUtils.trySwapCurrentToolIfNearlyBroken();
-        return isToolAllowedByDurabilityProtection(player.getMainHandItem());
+        if (isToolAllowedByDurabilityProtection(player.getMainHandItem())) {
+            return true;
+        }
+        if (blockState != null && InventoryUtils.switchToBestTool(player, blockState)) {
+            return isToolAllowedByDurabilityProtection(player.getMainHandItem());
+        }
+        return false;
     }
 
     public void add(BlockPos pos) {

@@ -73,6 +73,9 @@ public class PrintHandler extends Module {
 
     @Override
     protected int getTickInterval() {
+        if (this.printTasks.hasActiveTask()) {
+            return 0;
+        }
         return Configs.Placement.PLACE_INTERVAL.getIntegerValue();
     }
 

@@ -369,7 +369,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         if (!allowToolSwitch || !InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState)) {
             ensureHasSentCarriedItem();
         }
-        if (!InteractionUtils.protectCurrentToolBeforeBreak()) {
+        if (!InteractionUtils.protectCurrentToolBeforeBreak(blockState)) {
             return BlockBreakResult.FAILED;
         }
         ensureHasSentCarriedItem();
@@ -472,7 +472,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             InteractionUtils.trySwitchToEffectiveTool(blockPos, blockState);
         }
         ensureHasSentCarriedItem();
-        if (!InteractionUtils.protectCurrentToolBeforeBreak()) {
+        if (!InteractionUtils.protectCurrentToolBeforeBreak(blockState)) {
             MineDebugLog.write("mine break failed pos=" + MineDebugLog.pos(blockPos) + " reason=tool_durability_protected");
             return BlockBreakResult.FAILED;
         }

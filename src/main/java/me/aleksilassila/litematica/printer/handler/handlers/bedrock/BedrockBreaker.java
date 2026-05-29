@@ -38,7 +38,7 @@ public final class BedrockBreaker {
         if (!switched) {
             return false;
         }
-        if (!InteractionUtils.protectCurrentToolBeforeBreak()) {
+        if (!InteractionUtils.protectCurrentToolBeforeBreak(state)) {
             return false;
         }
 
