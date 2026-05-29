@@ -15,8 +15,6 @@ version = artifactVersion
 group = modMavenGroup
 
 repositories {
-    mavenLocal()
-    maven { url = uri("$rootDir/project_maven") }
     fun strictMaven(url: String, vararg groups: String) = exclusiveContent {
         forRepository { maven(url) }
         filter {
@@ -41,13 +39,9 @@ repositories {
     strictMaven("https://maven.nucleoid.xyz", "eu.pb4") // ModMenu依赖TextPlaceholderAPI
     strictMaven("https://maven.jackf.red/releases", "red.jackf")  // JackFredLib 依赖
     strictMaven("https://maven.blamejared.com") // Searchables 配置库
-    strictMaven("https://staging.alexiil.uk/maven/")
+    strictMaven("https://staging.alexiil.uk/maven/", "io.github.cottonmc", "io.github.juuxel", "blue.endless") // LibGui 依赖
     strictMaven("https://maven.isxander.dev/releases")
     strictMaven("https://maven.shedaniel.me")  // Cloth API/Config 官方源
-
-    // if (mcVersionInt <= 11904) {
-    //     strictMaven("https://maven.cottonmc.re", "io.github.cottonmc")   // LibGui 依赖
-    // }
     strictMaven("https://jitpack.io")
 }
 
