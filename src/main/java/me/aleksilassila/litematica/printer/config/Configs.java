@@ -301,6 +301,19 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 64)
                 .build();
 
+        // RTT 自适应重放间隔 - 开关
+        // 根据玩家 ping 自动把放置间隔抬到不低于一次往返,减少服务器下「发包快于服务端确认」导致的放错。
+        public static final ConfigBoolean RTT_ADAPTIVE_INTERVAL = bool("placeRttAdaptiveInterval")
+                .defaultValue(false)
+                .build();
+
+        // RTT 自适应 - 安全系数(百分比):以 RTT 的该百分比作为最小间隔,100 = 恰好一个往返。
+        public static final ConfigInteger RTT_SAFETY_PERCENT = integer("placeRttSafetyPercent")
+                .defaultValue(100)
+                .range(25, 300)
+                .setVisible(RTT_ADAPTIVE_INTERVAL::getBooleanValue)
+                .build();
+
         // 下落方块检查
         public static final ConfigBoolean FALLING_CHECK = bool("printFallingBlockCheck")
                 .defaultValue(true)
@@ -332,6 +345,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PLACE_INTERVAL,
                 PLACE_BLOCKS_PER_TICK,
                 PLACE_COOLDOWN,
+                RTT_ADAPTIVE_INTERVAL,
+                RTT_SAFETY_PERCENT,
                 FALLING_CHECK,
                 STORE_ORDERLY,
                 QUICK_SHULKER,

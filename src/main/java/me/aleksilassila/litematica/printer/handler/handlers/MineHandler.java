@@ -4,26 +4,22 @@ import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
-import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.handler.TickContext;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
-import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
+import me.aleksilassila.litematica.printer.utils.UsageRestrictionCache;
 import me.aleksilassila.litematica.printer.utils.mods.ModLoadUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -33,17 +29,13 @@ import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTR
 
 public class MineHandler extends Module {
     public static final String NAME = "mine";
-    private static final double TOOL_SESSION_FRONTIER_MARGIN = 2.5D;
-    private static final RestrictionCache MINE_RESTRICTION_CACHE = new RestrictionCache();
+    private static final UsageRestrictionCache MINE_RESTRICTION_CACHE = new UsageRestrictionCache();
 
     private final MineBreakExecutor analyzer = new MineBreakExecutor();
+    private final MineToolSession toolSession = new MineToolSession();
     private final List<MineBreakExecutor.Target> candidates = new ArrayList<>();
     @Nullable
     private BlockPos activeMinePos;
-    @Nullable
-    private Item sessionToolItem;
-    private int remainingInstantBudget;
-    private int toolSessionRemaining;
 
     public MineHandler() {
         super(NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
@@ -59,8 +51,7 @@ public class MineHandler extends Module {
         if (!ConfigUtils.isEnable() || !ConfigUtils.isMineMode()) {
             this.analyzer.reset();
             this.activeMinePos = null;
-            this.sessionToolItem = null;
-            this.toolSessionRemaining = 0;
+            this.toolSession.reset();
         }
         super.tick(context);
     }
@@ -76,24 +67,20 @@ public class MineHandler extends Module {
         if (Configs.Mine.EXCAVATE_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             if (!ModLoadUtils.isTweakerooLoaded()) return true;
             UsageRestriction.ListType listType = BLOCK_TYPE_BREAK_RESTRICTION.getListType();
-            List<String> filters = listType == UsageRestriction.ListType.BLACKLIST
-                    ? BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings()
-                    : listType == UsageRestriction.ListType.WHITELIST
-                    ? BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings()
-                    : List.of();
-            return MINE_RESTRICTION_CACHE.allows("tweakeroo", listType, filters, blockState);
+            return MINE_RESTRICTION_CACHE.allows("tweakeroo", listType,
+                    BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings(),
+                    BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings(),
+                    blockState);
         }
 
         Object optionListValue = Configs.Mine.EXCAVATE_LIMIT.getOptionListValue();
         UsageRestriction.ListType listType = optionListValue instanceof UsageRestriction.ListType type
                 ? type
                 : UsageRestriction.ListType.NONE;
-        List<String> filters = listType == UsageRestriction.ListType.BLACKLIST
-                ? Configs.Mine.EXCAVATE_BLACKLIST.getStrings()
-                : listType == UsageRestriction.ListType.WHITELIST
-                ? Configs.Mine.EXCAVATE_WHITELIST.getStrings()
-                : List.of();
-        return MINE_RESTRICTION_CACHE.allows("custom", listType, filters, blockState);
+        return MINE_RESTRICTION_CACHE.allows("custom", listType,
+                Configs.Mine.EXCAVATE_BLACKLIST.getStrings(),
+                Configs.Mine.EXCAVATE_WHITELIST.getStrings(),
+                blockState);
     }
 
     @Override
@@ -114,8 +101,7 @@ public class MineHandler extends Module {
     @Override
     protected void preprocess() {
         this.candidates.clear();
-        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
-        this.remainingInstantBudget = configuredBudget == 0 ? -1 : configuredBudget;
+        this.toolSession.beginTick();
         this.continueActiveMineTarget();
     }
 
@@ -145,10 +131,10 @@ public class MineHandler extends Module {
         if (ActionManager.INSTANCE.needWaitModifyLook || this.activeMinePos != null || this.candidates.isEmpty()) {
             return;
         }
-        this.candidates.sort(this.createTargetComparator());
+        this.candidates.sort(this.toolSession.comparator(this.player));
         MineBreakExecutor.Target nearest = this.candidates.get(0);
-        MineBreakExecutor.Target selected = this.selectTargetForToolSession(nearest);
-        this.executeToolSession(selected, this.distanceScore(nearest));
+        MineBreakExecutor.Target selected = this.toolSession.selectTarget(this.candidates, this.analyzer, this.player);
+        this.executeToolSession(selected, MineToolSession.distanceScore(this.player, nearest));
     }
 
     private void continueActiveMineTarget() {
@@ -161,11 +147,11 @@ public class MineHandler extends Module {
             return;
         }
         BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlockForMine(pos, Direction.DOWN, true);
-        this.handleMineResult(pos, result);
+        MineResultReporter.record(pos, result);
         if (result == BlockBreakResult.IN_PROGRESS
                 || result == BlockBreakResult.COMPLETED
                 || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.consumeToolSessionAction();
+            this.toolSession.consumeAction();
         }
         if (result != BlockBreakResult.IN_PROGRESS) {
             this.activeMinePos = null;
@@ -205,73 +191,33 @@ public class MineHandler extends Module {
                 && mineRestriction(state);
     }
 
-    private Comparator<MineBreakExecutor.Target> createTargetComparator() {
-        return Comparator
-                .comparingDouble(this::distanceScore)
-                .thenComparingInt(target -> target.pos().getY())
-                .thenComparingInt(target -> target.pos().getX())
-                .thenComparingInt(target -> target.pos().getZ());
-    }
-
-    private double distanceScore(MineBreakExecutor.Target target) {
-        if (this.player == null) {
-            return 0.0D;
-        }
-        Vec3 eye = this.player.getEyePosition();
-        return Vec3.atCenterOf(target.pos()).distanceToSqr(eye);
-    }
-
-    private MineBreakExecutor.Target selectTargetForToolSession(MineBreakExecutor.Target nearest) {
-        if (this.sessionToolItem != null && this.toolSessionRemaining > 0) {
-            double nearestDistance = this.distanceScore(nearest);
-            for (MineBreakExecutor.Target target : this.candidates) {
-                if (!this.isInsideToolSessionFrontier(target, nearestDistance)) {
-                    break;
-                }
-                if (this.analyzer.hasSameBestTool(target, this.sessionToolItem)) {
-                    return target;
-                }
-            }
-        }
-        this.sessionToolItem = nearest.bestToolItem();
-        this.toolSessionRemaining = this.getToolSessionQuota();
-        return nearest;
-    }
-
-    private boolean isInsideToolSessionFrontier(MineBreakExecutor.Target target, double nearestDistance) {
-        if (this.remainingInstantBudget < 0) {
-            return true;
-        }
-        double nearest = Math.sqrt(nearestDistance);
-        double targetDistance = Math.sqrt(this.distanceScore(target));
-        return targetDistance <= nearest + TOOL_SESSION_FRONTIER_MARGIN;
-    }
-
     private void executeToolSession(MineBreakExecutor.Target firstTarget, double nearestDistance) {
-        Item toolItem = firstTarget.bestToolItem();
-        this.sessionToolItem = toolItem;
-        if (this.toolSessionRemaining <= 0) {
-            this.toolSessionRemaining = this.getToolSessionQuota();
+        this.toolSession.startSession(firstTarget);
+        if (!MineToolSession.ensureHandToolProtected(this.player, firstTarget)) {
+            return;
         }
         BlockBreakResult result = this.executeSessionTarget(firstTarget, !this.analyzer.isCurrentToolEffective(firstTarget));
-        if (this.shouldStopSession(result)) {
+        if (this.toolSession.shouldStop(result, this.activeMinePos != null)) {
             return;
         }
         for (MineBreakExecutor.Target target : this.candidates) {
             if (target == firstTarget) {
                 continue;
             }
-            if (!this.hasInstantBudget()) {
+            if (!this.toolSession.hasInstantBudget()) {
                 break;
             }
-            if (!this.analyzer.hasSameBestTool(target, toolItem)) {
+            if (!this.toolSession.matchesSessionTool(this.analyzer, target)) {
                 continue;
             }
-            if (!this.isInsideToolSessionFrontier(target, nearestDistance)) {
+            if (!this.toolSession.isInsideFrontier(this.player, target, nearestDistance)) {
+                break;
+            }
+            if (!MineToolSession.ensureHandToolProtected(this.player, target)) {
                 break;
             }
             result = this.executeSessionTarget(target, false);
-            if (this.shouldStopSession(result)) {
+            if (this.toolSession.shouldStop(result, this.activeMinePos != null)) {
                 break;
             }
         }
@@ -283,22 +229,15 @@ public class MineHandler extends Module {
             this.setBlockPosCooldown(target.pos(), ConfigUtils.getBreakCooldown());
         }
         if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.consumeInstantBudget();
+            this.toolSession.consumeInstantBudget();
         }
         if (result == BlockBreakResult.IN_PROGRESS
                 || result == BlockBreakResult.COMPLETED
                 || result == BlockBreakResult.COMPLETED_WAIT) {
-            this.consumeToolSessionAction();
+            this.toolSession.consumeAction();
         }
-        this.handleMineResult(target.pos(), result);
+        MineResultReporter.record(target.pos(), result);
         return result;
-    }
-
-    private boolean shouldStopSession(BlockBreakResult result) {
-        return result == BlockBreakResult.IN_PROGRESS
-                || result == BlockBreakResult.ABORTED
-                || this.activeMinePos != null
-                || !this.hasInstantBudget();
     }
 
     private BlockBreakResult executeMineTarget(MineBreakExecutor.Target target, boolean allowToolSwitch) {
@@ -309,90 +248,4 @@ public class MineHandler extends Module {
         return result;
     }
 
-    private void consumeToolSessionAction() {
-        if (this.toolSessionRemaining > 0) {
-            this.toolSessionRemaining--;
-        }
-    }
-
-    private int getToolSessionQuota() {
-        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
-        if (configuredBudget <= 0) {
-            return 8;
-        }
-        return Math.max(3, Math.min(8, configuredBudget / 2));
-    }
-
-    private boolean hasInstantBudget() {
-        return this.remainingInstantBudget < 0 || this.remainingInstantBudget > 0;
-    }
-
-    private void consumeInstantBudget() {
-        if (this.remainingInstantBudget > 0) {
-            this.remainingInstantBudget--;
-        }
-    }
-
-    private void handleMineResult(BlockPos blockPos, BlockBreakResult result) {
-        switch (result) {
-            case COMPLETED -> {
-                InteractionUtils.INSTANCE.markRecentlyBroken(blockPos);
-                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
-                HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.MINE, 1);
-                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "运行中");
-            }
-            case COMPLETED_WAIT -> {
-                InteractionUtils.INSTANCE.markRecentlyBroken(blockPos);
-                InteractionUtils.INSTANCE.markPendingBroken(blockPos, ConfigUtils.getBreakCooldown());
-                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "等待服务端确认");
-            }
-            case IN_PROGRESS -> {
-                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
-                HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.MINE, "破坏中");
-            }
-            case ABORTED -> {
-                HudStatsManager.INSTANCE.trackExpectedMineClear(HudStatsManager.Mode.MINE, blockPos);
-                HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.MINE, "挖掘中断");
-            }
-            case FAILED -> HudStatsManager.INSTANCE.recordFailure(HudStatsManager.Mode.MINE, "破坏失败");
-        }
-    }
-
-    private static final class RestrictionCache {
-        private String source = "";
-        private UsageRestriction.ListType listType = UsageRestriction.ListType.NONE;
-        private List<String> listCache = List.of();
-        private String[] filters = new String[0];
-
-        private boolean allows(String source, UsageRestriction.ListType listType, List<String> filters, BlockState blockState) {
-            this.update(source, listType, filters);
-            if (this.listType == UsageRestriction.ListType.BLACKLIST) {
-                return !this.matchesAny(blockState);
-            }
-            if (this.listType == UsageRestriction.ListType.WHITELIST) {
-                return this.matchesAny(blockState);
-            }
-            return true;
-        }
-
-        private void update(String source, UsageRestriction.ListType listType, List<String> filters) {
-            if (source.equals(this.source) && listType == this.listType && filters.equals(this.listCache)) {
-                return;
-            }
-            this.source = source;
-            this.listType = listType;
-            this.listCache = new ArrayList<>(filters);
-            this.filters = this.listCache.toArray(new String[0]);
-        }
-
-        private boolean matchesAny(BlockState blockState) {
-            for (String filter : this.filters) {
-                if (FilterUtils.matchBlockName(filter, blockState)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
 }

@@ -13,9 +13,9 @@ import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.RegistryFilterResolver;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -65,14 +65,7 @@ public class FillHandler extends Module {
                         HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FILL, "填充列表为空");
                         return;
                     }
-                    List<Item> items = new ArrayList<>();
-                    for (String itemName : fillCacheBlocklist) {
-                        items.addAll(BuiltInRegistries.ITEM
-                                .stream()
-                                .filter(item -> FilterUtils.matchName(itemName, new ItemStack(item)))
-                                .toList()
-                        );
-                    }
+                    List<Item> items = RegistryFilterResolver.resolveItems(fillCacheBlocklist);
                     fillModeItemList = items.toArray(new Item[0]);
                 }
                 break;

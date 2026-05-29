@@ -12,7 +12,6 @@ import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.CooldownUtils;
 import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
-import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -25,16 +24,15 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.Iterator;
 import java.util.function.Predicate;
 
 public abstract class Module extends ConfigUtils {
     @Getter
     @Nullable
     public final AtomicReference<PrinterBox> playerInteractionBox;
+    private final InteractionBoxTracker interactionBoxTracker;
+    private final GuiBlockInfoBuffer guiBlockInfoBuffer = new GuiBlockInfoBuffer();
     @Getter
     private final String id;
     @Getter
@@ -47,7 +45,6 @@ public abstract class Module extends ConfigUtils {
     @Nullable
     private final ConfigOptionList selectionType;
     private final AtomicReference<Boolean> skipIteration = new AtomicReference<>(false);
-    private final Queue<GuiBlockInfo> guiBlockInfoQueue = new ConcurrentLinkedQueue<>();
     private boolean iterationConsumedEffectiveExecution = true;
 
     protected Minecraft mc;
@@ -60,23 +57,16 @@ public abstract class Module extends ConfigUtils {
     protected HitResult hitResult;
     @Nullable
     protected BlockHitResult blockHitResult;
-    @Nullable
-    private PrinterBox lastPlayerInteractionBox;
-
-    @Nullable
-    private BlockPos lastPlayerPos;
 
     private long lastTickTime = -1L;
-    @Getter
-    private int renderIndex = 0;
-    private int guiBlockPosCacheTicks;
 
     protected Module(String id, @Nullable PrintModeType printMode, @Nullable ConfigBoolean enableConfig, @Nullable ConfigOptionList selectionType, boolean useBox) {
         this.id = id;
         this.printMode = printMode;
         this.enableConfig = enableConfig;
         this.selectionType = selectionType;
-        this.playerInteractionBox = useBox ? new AtomicReference<>() : null;
+        this.interactionBoxTracker = new InteractionBoxTracker(useBox);
+        this.playerInteractionBox = this.interactionBoxTracker.getBoxReference();
         this.updateVariables();
     }
 
@@ -89,7 +79,7 @@ public abstract class Module extends ConfigUtils {
     }
 
     public void tick(TickContext context) {
-        this.tickGuiBlockInfoCache();
+        this.guiBlockInfoBuffer.tickCache();
         if (this.shouldSkipByTickInterval(context)) {
             return;
         }
@@ -125,15 +115,6 @@ public abstract class Module extends ConfigUtils {
         this.blockHitResult = context.blockHitResult;
     }
 
-    private void tickGuiBlockInfoCache() {
-        if (this.guiBlockPosCacheTicks > 0) {
-            this.guiBlockPosCacheTicks--;
-            return;
-        }
-        this.guiBlockInfoQueue.clear();
-        this.renderIndex = 0;
-    }
-
     private boolean shouldSkipByTickInterval(TickContext context) {
         int tickInterval = this.getTickInterval();
         if (tickInterval <= 0) {
@@ -157,42 +138,11 @@ public abstract class Module extends ConfigUtils {
     }
 
     private void resetPlayerTracking() {
-        this.lastPlayerPos = null;
+        this.interactionBoxTracker.resetPlayerTracking();
     }
 
     private void updatePlayerInteractionBox() {
-        if (this.playerInteractionBox == null) {
-            return;
-        }
-        BlockPos playerPos = this.player.blockPosition();
-        double threshold = getWorkRange() * 0.7;
-        @Nullable PrinterBox playerInteractionBox = this.playerInteractionBox.get();
-        if (playerInteractionBox == null
-                || !playerInteractionBox.equals(this.lastPlayerInteractionBox)
-                || this.lastPlayerPos == null
-                || !this.lastPlayerPos.closerThan(playerPos, threshold)
-        ) {
-            this.lastPlayerPos = playerPos;
-            playerInteractionBox = this.createPlayerInteractionBox(playerPos);
-            this.lastPlayerInteractionBox = playerInteractionBox;
-            this.playerInteractionBox.set(playerInteractionBox);
-        }
-        this.syncIterationConfig(playerInteractionBox);
-    }
-
-    private PrinterBox createPlayerInteractionBox(BlockPos playerPos) {
-        PrinterBox box = new PrinterBox(playerPos);
-        if (Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()) {
-            return box.expand((int) Math.ceil(PlayerUtils.getPlayerBlockInteractionRange(5) + 3));
-        }
-        return box.expand(getWorkRange());
-    }
-
-    private void syncIterationConfig(PrinterBox playerInteractionBox) {
-        playerInteractionBox.iterationMode = (IterationOrderType) Configs.Core.ITERATION_ORDER.getOptionListValue();
-        playerInteractionBox.xIncrement = !Configs.Core.X_REVERSE.getBooleanValue();
-        playerInteractionBox.yIncrement = !Configs.Core.Y_REVERSE.getBooleanValue();
-        playerInteractionBox.zIncrement = !Configs.Core.Z_REVERSE.getBooleanValue();
+        this.interactionBoxTracker.update(this.player);
     }
 
     private boolean runIterationIfNeeded() {
@@ -214,7 +164,7 @@ public abstract class Module extends ConfigUtils {
         boolean interrupt = false;
         boolean trackGuiBlockInfo = this.shouldTrackGuiBlockInfo();
         this.skipIteration.set(false);
-        this.resetGuiBlockInfoTracking(trackGuiBlockInfo);
+        this.guiBlockInfoBuffer.resetForTracking(trackGuiBlockInfo);
 
         Iterable<BlockPos> iterationPositions = this.getIterationPositions(playerInteractionBox);
         for (BlockPos pos : iterationPositions) {
@@ -239,23 +189,23 @@ public abstract class Module extends ConfigUtils {
                 if (gui != null) {
                     gui.interacted = false;
                 }
-                this.addGuiBlockInfoToQueue(gui);
+                this.guiBlockInfoBuffer.add(gui);
                 continue;
             }
             if (isSchematicBlockHandler()) {
                 if (!LitematicaUtils.isSchematicBlock(pos)) {
-                    this.addGuiBlockInfoToQueue(gui);
+                    this.guiBlockInfoBuffer.add(gui);
                     continue;
                 }
             } else if (requiresSelection1ModeRangeCheck() && !LitematicaUtils.isWithinSelection1ModeRange(pos)) {
-                this.addGuiBlockInfoToQueue(gui);
+                this.guiBlockInfoBuffer.add(gui);
                 continue;
             }
             if (selectionType != null && !ConfigUtils.isPositionInSelectionRange(player, pos, selectionType)) {
                 if (gui != null) {
                     gui.posInSelectionRange = false;
                 }
-                this.addGuiBlockInfoToQueue(gui);
+                this.guiBlockInfoBuffer.add(gui);
                 continue;
             }
             if (gui != null) {
@@ -273,23 +223,13 @@ public abstract class Module extends ConfigUtils {
                     interrupt = true;
                 }
             }
-            this.addGuiBlockInfoToQueue(gui);
+            this.guiBlockInfoBuffer.add(gui);
             if (interrupt) {
                 break;
             }
         }
         stopIteration(interrupt);
         return interrupt;
-    }
-
-    private void resetGuiBlockInfoTracking(boolean trackGuiBlockInfo) {
-        if (trackGuiBlockInfo) {
-            this.guiBlockInfoQueue.clear();
-            this.renderIndex = 0;
-        } else if (!this.guiBlockInfoQueue.isEmpty()) {
-            this.guiBlockInfoQueue.clear();
-            this.renderIndex = 0;
-        }
     }
 
     protected void stopIteration(boolean interrupt) {
@@ -319,45 +259,26 @@ public abstract class Module extends ConfigUtils {
         return new GuiBlockInfo(level, null, pos);
     }
 
-    private void addGuiBlockInfoToQueue(GuiBlockInfo guiBlockInfo) {
-        if (guiBlockInfo != null) {
-            this.guiBlockInfoQueue.add(guiBlockInfo);
-            this.guiBlockPosCacheTicks = 20; // 重置缓存Tick数为20
-        }
-    }
-
     @Nullable
     public GuiBlockInfo getCurrentRenderGuiBlockInfo() {
-        if (guiBlockInfoQueue.isEmpty()) {
-            return null;
-        }
-        GuiBlockInfo[] infoArray = guiBlockInfoQueue.toArray(new GuiBlockInfo[0]);
-        // 渲染索引超出队列长度时，返回最后一个元素并重置索引
-        if (renderIndex >= infoArray.length) {
-            renderIndex = 0; // 循环展示（可选：也可返回null）
-            return infoArray[infoArray.length - 1];
-        }
-        // 获取当前帧的信息并推进索引
-        GuiBlockInfo currentInfo = infoArray[renderIndex];
-        renderIndex++;
-        return currentInfo;
+        return this.guiBlockInfoBuffer.current();
     }
 
     @Nullable
     public GuiBlockInfo getGuiBlockInfo() {
-        if (guiBlockInfoQueue.isEmpty()) {
-            return null;
-        }
-        // 返回队列最后一个元素（兼容原有逻辑）
-        return ((GuiBlockInfo[]) guiBlockInfoQueue.toArray(new GuiBlockInfo[0]))[guiBlockInfoQueue.size() - 1];
+        return this.guiBlockInfoBuffer.latest();
     }
 
     public void setGuiBlockInfo(@Nullable GuiBlockInfo guiBlockInfo) {
-        this.addGuiBlockInfoToQueue(guiBlockInfo);
+        this.guiBlockInfoBuffer.add(guiBlockInfo);
     }
 
     public int getGuiBlockInfoQueueSize() {
-        return guiBlockInfoQueue.size();
+        return this.guiBlockInfoBuffer.size();
+    }
+
+    public int getRenderIndex() {
+        return this.guiBlockInfoBuffer.renderIndex();
     }
 
     private boolean isConfigAllowExecute() {
@@ -400,57 +321,7 @@ public abstract class Module extends ConfigUtils {
     protected Iterable<BlockPos> getFilteredIterationPositions(PrinterBox playerInteractionBox, Predicate<BlockPos> candidatePredicate) {
         int maxTotalIterations = this.getMaxTotalIterationsPerTick();
         int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
-        Iterator<BlockPos> source = playerInteractionBox.iterator();
-
-        return () -> new Iterator<>() {
-            private BlockPos next;
-            private boolean prepared;
-            private boolean scanLimitHit;
-            private boolean sentinelReturned;
-            private int scanned;
-
-            private void prepare() {
-                if (this.prepared) {
-                    return;
-                }
-
-                this.prepared = true;
-                while (source.hasNext() && this.scanned < scanLimit) {
-                    BlockPos candidate = source.next();
-                    this.scanned++;
-                    if (candidatePredicate.test(candidate)) {
-                        this.next = candidate;
-                        return;
-                    }
-                }
-
-                this.scanLimitHit = source.hasNext() && this.scanned >= scanLimit;
-            }
-
-            @Override
-            public boolean hasNext() {
-                this.prepare();
-                return this.next != null || (this.scanLimitHit && !this.sentinelReturned);
-            }
-
-            @Override
-            public BlockPos next() {
-                this.prepare();
-                if (this.next != null) {
-                    BlockPos result = this.next;
-                    this.next = null;
-                    this.prepared = false;
-                    return result;
-                }
-
-                if (this.scanLimitHit && !this.sentinelReturned) {
-                    this.sentinelReturned = true;
-                    return null;
-                }
-
-                return null;
-            }
-        };
+        return FilteredBlockPositions.create(playerInteractionBox.iterator(), scanLimit, candidatePredicate);
     }
 
     protected void preprocess() {

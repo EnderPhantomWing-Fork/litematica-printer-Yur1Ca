@@ -29,12 +29,7 @@ import net.minecraft.world.entity.player.Input;
 public class ActionManager {
     public static final ActionManager INSTANCE = new ActionManager();
 
-    public BlockPos target;
-    public Direction side;
-    public Vec3 hitModifier;
-    public boolean useShift = false;
-    public boolean useProtocol = false;
-    public int clickRepeatCount = 1;
+    private QueuedClick queuedClick;
     @Setter
     @Nullable
     public PlayerLook look;
@@ -50,27 +45,30 @@ public class ActionManager {
 
     public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount) {
         if (Configs.Placement.PLACE_INTERVAL.getIntegerValue() != 0) {
-            if (this.target != null) {
+            if (this.queuedClick != null) {
                 System.out.println("Was not ready yet.");
                 return;
             }
         }
-        this.target = target;
-        this.side = side;
-        this.hitModifier = hitModifier;
-        this.useShift = useShift;
-        this.clickRepeatCount = Math.max(1, clickRepeatCount);
+        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount);
+    }
+
+    public void useProtocolHitModifier(@NotNull Vec3 hitModifier) {
+        if (this.queuedClick != null) {
+            this.queuedClick.useProtocolHit(hitModifier);
+        }
     }
 
     public ActionManager sendQueue(LocalPlayer player) {
-        if (target == null || side == null || hitModifier == null) {
+        QueuedClick click = this.queuedClick;
+        if (click == null) {
             clearQueue();
             return this;
         }
         if (!needWaitModifyLook && look != null) {
             NetworkUtils.sendLookPacket(player, look);
         }
-        if (waitForHorizontalLook && !useProtocol && !needWaitModifyLook) {
+        if (waitForHorizontalLook && !click.useProtocol && !needWaitModifyLook) {
             if (look != null) {
                 Direction lookDirection = DirectionUtils.orderedByNearest(look.yaw, look.pitch)[0];
                 if (lookDirection.getAxis().isHorizontal()) {
@@ -84,18 +82,18 @@ public class ActionManager {
         }
         Direction direction;
         if (look == null) {
-            direction = side;
+            direction = click.side;
         } else {
             direction = DirectionUtils.getHorizontalDirection(look.yaw);
         }
         Vec3 hitVec;
-        if (!useProtocol) {
-            Vec3 targetCenter = Vec3.atCenterOf(target);
-            Vec3 sideOffset = Vec3.atLowerCornerOf(DirectionUtils.getVector(side)).scale(0.5);
-            Vec3 rotatedHitModifier = hitModifier.yRot((direction.toYRot() + 90) % 360).scale(0.5);
+        if (!click.useProtocol) {
+            Vec3 targetCenter = Vec3.atCenterOf(click.target);
+            Vec3 sideOffset = Vec3.atLowerCornerOf(DirectionUtils.getVector(click.side)).scale(0.5);
+            Vec3 rotatedHitModifier = click.hitModifier.yRot((direction.toYRot() + 90) % 360).scale(0.5);
             hitVec = targetCenter.add(sideOffset).add(rotatedHitModifier);
         } else {
-            hitVec = hitModifier;
+            hitVec = click.hitModifier;
         }
         if (InventoryUtils.getOrderlyStoreItem() != null) {
             if (InventoryUtils.getOrderlyStoreItem().isEmpty()) {
@@ -105,22 +103,22 @@ public class ActionManager {
             }
         }
         boolean wasSneak = player.isShiftKeyDown();
-        if (useShift && !wasSneak) {
+        if (click.useShift && !wasSneak) {
             setShift(player, true);
-        } else if (!useShift && wasSneak) {
+        } else if (!click.useShift && wasSneak) {
             setShift(player, false);
         }
         MultiPlayerGameModeExtension gameModeExtension = (MultiPlayerGameModeExtension) Reference.MINECRAFT.gameMode;
         if (gameModeExtension != null) {
             boolean localPrediction = !Configs.Placement.PRINT_USE_PACKET.getBooleanValue();
-            BlockHitResult blockHitResult = new BlockHitResult(hitVec, side, target, false);
-            for (int i = 0; i < this.clickRepeatCount; i++) {
+            BlockHitResult blockHitResult = new BlockHitResult(hitVec, click.side, click.target, false);
+            for (int i = 0; i < click.repeatCount; i++) {
                 gameModeExtension.litematica_printer$useItemOn(localPrediction, InteractionHand.MAIN_HAND, blockHitResult);
             }
         }
-        if (useShift && !wasSneak) {
+        if (click.useShift && !wasSneak) {
             setShift(player, false);
-        } else if (!useShift && wasSneak) {
+        } else if (!click.useShift && wasSneak) {
             setShift(player, true);
         }
         clearQueue();
@@ -143,12 +141,7 @@ public class ActionManager {
     }
 
     public void clearQueue() {
-        this.target = null;
-        this.side = null;
-        this.hitModifier = null;
-        this.useShift = false;
-        this.useProtocol = false;
-        this.clickRepeatCount = 1;
+        this.queuedClick = null;
         this.needWaitModifyLook = false;
         this.waitForHorizontalLook = true;
         this.look = null;

@@ -36,6 +36,7 @@ import static fi.dy.masa.tweakeroo.tweaks.PlacementTweaks.BLOCK_TYPE_BREAK_RESTR
 public class InteractionUtils {
     public static final Minecraft client = Minecraft.getInstance();
     public static final InteractionUtils INSTANCE = new InteractionUtils();
+    private static final UsageRestrictionCache BREAK_RESTRICTION_CACHE = new UsageRestrictionCache();
 
     private final Queue<BlockPos> breakQueue = new LinkedList<>();
     private final Map<BlockPos, Integer> recentlyBroken = new HashMap<>();
@@ -67,26 +68,19 @@ public class InteractionUtils {
         if (Configs.Break.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             if (!ModLoadUtils.isTweakerooLoaded()) return true;
             UsageRestriction.ListType listType = BLOCK_TYPE_BREAK_RESTRICTION.getListType();
-            if (listType == UsageRestriction.ListType.BLACKLIST) {
-                return BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else if (listType == UsageRestriction.ListType.WHITELIST) {
-                return BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else {
-                return true;
-            }
+            return BREAK_RESTRICTION_CACHE.allows("break_tweakeroo", listType,
+                    BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings(),
+                    BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings(),
+                    blockState);
         } else {
             IConfigOptionListEntry optionListValue = Configs.Break.BREAK_LIMIT.getOptionListValue();
-            if (optionListValue == UsageRestriction.ListType.BLACKLIST) {
-                return Configs.Break.BREAK_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else if (optionListValue == UsageRestriction.ListType.WHITELIST) {
-                return Configs.Break.BREAK_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> FilterUtils.matchBlockName(string, blockState));
-            } else {
-                return true;
-            }
+            UsageRestriction.ListType listType = optionListValue instanceof UsageRestriction.ListType type
+                    ? type
+                    : UsageRestriction.ListType.NONE;
+            return BREAK_RESTRICTION_CACHE.allows("break_custom", listType,
+                    Configs.Break.BREAK_BLACKLIST.getStrings(),
+                    Configs.Break.BREAK_WHITELIST.getStrings(),
+                    blockState);
         }
     }
 

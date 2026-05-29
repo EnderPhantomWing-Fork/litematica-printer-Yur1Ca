@@ -7,19 +7,18 @@ import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
-import me.aleksilassila.litematica.printer.utils.FilterUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.RegistryFilterResolver;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class FluidHandler extends Module {
@@ -30,7 +29,7 @@ public class FluidHandler extends Module {
     private Item[] fillItemArray = new Item[0];
 
     private List<String> fluidBlocks = new ArrayList<>();
-    private List<Fluid> fluids = List.of(new Fluid[0]);
+    private Set<Fluid> fluids = Set.of();
 
     public FluidHandler() {
         super(NAME, PrintModeType.FLUID, Configs.Core.FLUID, Configs.Fluid.FLUID_SELECTION_TYPE, true);
@@ -54,10 +53,7 @@ public class FluidHandler extends Module {
             fillBlocks = new ArrayList<>(fileBlocks);
             fillItems = new ArrayList<>();
             if (!fileBlocks.isEmpty()) {
-                for (String itemName : fillBlocks) {
-                    List<Item> list = BuiltInRegistries.ITEM.stream().filter(item -> FilterUtils.matchName(itemName, new ItemStack(item))).toList();
-                    fillItems.addAll(list);
-                }
+                fillItems.addAll(RegistryFilterResolver.resolveItems(fillBlocks));
             }
             fillItemArray = fillItems.toArray(new Item[0]);
         }
@@ -65,13 +61,7 @@ public class FluidHandler extends Module {
         List<String> fluidBlocks = Configs.Fluid.FLUID_LIST.getStrings();
         if (!fluidBlocks.equals(this.fluidBlocks)) {
             this.fluidBlocks = new ArrayList<>(fluidBlocks);
-            fluids = new ArrayList<>();
-            if (!fluidBlocks.isEmpty()) {
-                for (String itemName : this.fluidBlocks) {
-                    List<Fluid> list = BuiltInRegistries.FLUID.stream().filter(item -> FilterUtils.matchName(itemName, item.defaultFluidState().createLegacyBlock())).toList();
-                    fluids.addAll(list);
-                }
-            }
+            fluids = fluidBlocks.isEmpty() ? Set.of() : RegistryFilterResolver.resolveFluids(this.fluidBlocks);
         }
         if (fillItems.isEmpty()) {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "无流体填充方块");

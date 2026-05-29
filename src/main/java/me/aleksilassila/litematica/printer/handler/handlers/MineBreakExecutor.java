@@ -148,6 +148,10 @@ final class MineBreakExecutor {
             return this.pos;
         }
 
+        public BlockState state() {
+            return this.state;
+        }
+
         public float progress() {
             return this.bestProgress;
         }

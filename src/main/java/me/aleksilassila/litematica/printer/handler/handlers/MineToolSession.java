@@ -1,0 +1,127 @@
+package me.aleksilassila.litematica.printer.handler.handlers;
+
+import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
+import me.aleksilassila.litematica.printer.utils.InteractionUtils;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.Comparator;
+import java.util.List;
+
+final class MineToolSession {
+    private static final double FRONTIER_MARGIN = 2.5D;
+
+    private Item sessionToolItem;
+    private int remainingInstantBudget;
+    private int toolSessionRemaining;
+
+    void reset() {
+        this.sessionToolItem = null;
+        this.toolSessionRemaining = 0;
+    }
+
+    void beginTick() {
+        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        this.remainingInstantBudget = configuredBudget == 0 ? -1 : configuredBudget;
+    }
+
+    Comparator<MineBreakExecutor.Target> comparator(LocalPlayer player) {
+        return Comparator
+                .comparingDouble((MineBreakExecutor.Target target) -> distanceScore(player, target))
+                .thenComparingInt(target -> target.pos().getY())
+                .thenComparingInt(target -> target.pos().getX())
+                .thenComparingInt(target -> target.pos().getZ());
+    }
+
+    MineBreakExecutor.Target selectTarget(List<MineBreakExecutor.Target> candidates, MineBreakExecutor analyzer, LocalPlayer player) {
+        MineBreakExecutor.Target nearest = candidates.get(0);
+        if (this.sessionToolItem != null && this.toolSessionRemaining > 0) {
+            double nearestDistance = distanceScore(player, nearest);
+            for (MineBreakExecutor.Target target : candidates) {
+                if (!this.isInsideFrontier(player, target, nearestDistance)) {
+                    break;
+                }
+                if (analyzer.hasSameBestTool(target, this.sessionToolItem)) {
+                    return target;
+                }
+            }
+        }
+        this.sessionToolItem = nearest.bestToolItem();
+        this.toolSessionRemaining = this.getToolSessionQuota();
+        return nearest;
+    }
+
+    void startSession(MineBreakExecutor.Target firstTarget) {
+        this.sessionToolItem = firstTarget.bestToolItem();
+        if (this.toolSessionRemaining <= 0) {
+            this.toolSessionRemaining = this.getToolSessionQuota();
+        }
+    }
+
+    boolean matchesSessionTool(MineBreakExecutor analyzer, MineBreakExecutor.Target target) {
+        return analyzer.hasSameBestTool(target, this.sessionToolItem);
+    }
+
+    boolean shouldStop(BlockBreakResult result, boolean hasActiveMinePos) {
+        return result == BlockBreakResult.IN_PROGRESS
+                || result == BlockBreakResult.ABORTED
+                || hasActiveMinePos
+                || !this.hasInstantBudget();
+    }
+
+    void consumeAction() {
+        if (this.toolSessionRemaining > 0) {
+            this.toolSessionRemaining--;
+        }
+    }
+
+    void consumeInstantBudget() {
+        if (this.remainingInstantBudget > 0) {
+            this.remainingInstantBudget--;
+        }
+    }
+
+    boolean hasInstantBudget() {
+        return this.remainingInstantBudget < 0 || this.remainingInstantBudget > 0;
+    }
+
+    boolean isInsideFrontier(LocalPlayer player, MineBreakExecutor.Target target, double nearestDistance) {
+        if (this.remainingInstantBudget < 0) {
+            return true;
+        }
+        double nearest = Math.sqrt(nearestDistance);
+        double targetDistance = Math.sqrt(distanceScore(player, target));
+        return targetDistance <= nearest + FRONTIER_MARGIN;
+    }
+
+    private int getToolSessionQuota() {
+        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        if (configuredBudget <= 0) {
+            return 8;
+        }
+        return Math.max(3, Math.min(8, configuredBudget / 2));
+    }
+
+    static double distanceScore(LocalPlayer player, MineBreakExecutor.Target target) {
+        Vec3 eye = player.getEyePosition();
+        return Vec3.atCenterOf(target.pos()).distanceToSqr(eye);
+    }
+
+    /**
+     * 在真正发包破坏之前,用当前手持工具的实时耐久重新闸门一次。
+     * 候选集在 tick 起点 analyze 时已做过耐久判断,但一个会话会连续破坏多块且 allowToolSwitch=false,
+     * 手持工具可能在破坏过程中掉到 Tweakeroo 的保护阈值以下。这里每次破坏前实时校验,先尝试换到安全工具,
+     * 仍不安全则拒绝本次破坏(交由调用方结束会话)。未开启耐久保护时该方法恒返回 true,无副作用。
+     */
+    static boolean ensureHandToolProtected(LocalPlayer player, MineBreakExecutor.Target target) {
+        if (player == null || player.getAbilities().instabuild) {
+            return true;
+        }
+        if (InteractionUtils.isToolAllowedByDurabilityProtection(player.getMainHandItem())) {
+            return true;
+        }
+        return InteractionUtils.protectCurrentToolBeforeBreak(target == null ? null : target.state());
+    }
+}
