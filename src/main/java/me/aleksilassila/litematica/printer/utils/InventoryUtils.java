@@ -485,6 +485,19 @@ public class InventoryUtils {
         return false;
     }
 
+    public static boolean isHoldingAnyItem(LocalPlayer player, Item[] items) {
+        if (items == null || items.length == 0) {
+            return true;
+        }
+        Item heldItem = player.getMainHandItem().getItem();
+        for (Item item : items) {
+            if (heldItem.equals(item)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 检查是否能切换到目标物品（配合槽位检查，仅判断不执行切换）
      *

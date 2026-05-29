@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.handler.TickContext;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -95,7 +96,7 @@ public class MineHandler extends Module {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        return this.getFilteredIterationPositions(playerInteractionBox, this::isMineScanCandidate);
+        return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.MINE, this::isMineScanCandidate);
     }
 
     @Override

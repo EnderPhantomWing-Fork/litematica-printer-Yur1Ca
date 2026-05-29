@@ -1,7 +1,10 @@
 package me.aleksilassila.litematica.printer.handler.handlers.print;
 
 import fi.dy.masa.litematica.world.WorldSchematic;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
@@ -11,8 +14,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 public final class SortedSchematicTargetQueue {
     private final Deque<BlockPos> queue = new ArrayDeque<>();
@@ -25,33 +30,53 @@ public final class SortedSchematicTargetQueue {
         this.hasMoreSource = false;
     }
 
-    public Iterable<BlockPos> iterable(PrinterBox sourceBox, WorldSchematic schematic, LocalPlayer player, int maxTotalIterations) {
+    public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int maxTotalIterations) {
         if (this.box != sourceBox) {
             this.queue.clear();
             this.box = sourceBox;
         }
-        this.fill(sourceBox, schematic, player, maxTotalIterations);
+        this.fill(sourceBox, level, schematic, player, maxTotalIterations);
         return this::iterator;
     }
 
-    private void fill(PrinterBox sourceBox, WorldSchematic schematic, LocalPlayer player, int maxTotalIterations) {
+    private void fill(PrinterBox sourceBox, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int maxTotalIterations) {
         int collectLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
+        boolean previousHasMoreSource = this.hasMoreSource;
         List<BlockPos> positions = new ArrayList<>();
+        Set<Long> queuedKeys = new HashSet<>();
         while (!this.queue.isEmpty()) {
-            positions.add(this.queue.removeFirst());
+            BlockPos queued = this.queue.removeFirst();
+            positions.add(queued);
+            queuedKeys.add(ScanCache.key(queued));
         }
-        Iterator<BlockPos> source = sourceBox.iterator();
-        int scanned = 0;
-        while (source.hasNext() && positions.size() < collectLimit && scanned < collectLimit) {
-            BlockPos candidate = source.next();
-            scanned++;
-            if (!schematic.getBlockState(candidate).isAir()) {
-                positions.add(candidate);
+        this.hasMoreSource = positions.size() >= collectLimit && previousHasMoreSource;
+        if (positions.size() < collectLimit) {
+            Iterable<BlockPos> candidates = ScanCache.INSTANCE.iterable(
+                    "print_sorted",
+                    sourceBox,
+                    level,
+                    schematic,
+                    player,
+                    maxTotalIterations,
+                    ScanIntent.PRINT,
+                    pos -> true
+            );
+            for (BlockPos candidate : candidates) {
+                if (candidate == null) {
+                    this.hasMoreSource = true;
+                    break;
+                }
+                if (positions.size() >= collectLimit) {
+                    this.hasMoreSource = true;
+                    break;
+                }
+                if (queuedKeys.add(ScanCache.key(candidate))) {
+                    positions.add(candidate);
+                }
             }
         }
         positions.sort(createComparator(schematic, player));
         this.queue.addAll(positions);
-        this.hasMoreSource = maxTotalIterations > 0 && source.hasNext();
     }
 
     private Iterator<BlockPos> iterator() {

@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementExecutor;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintPlacementResult;
 import me.aleksilassila.litematica.printer.handler.handlers.print.PrintTaskAction;
@@ -97,13 +98,13 @@ public class PrintHandler extends Module {
         }
         if (!Configs.Print.PRINT_SORT_TARGETS.getBooleanValue()) {
             this.sortedTargets.clear();
-            return playerInteractionBox;
+            return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.PRINT, pos -> true);
         }
         if (schematic == null || player == null) {
             this.sortedTargets.clear();
             return playerInteractionBox;
         }
-        return this.sortedTargets.iterable(playerInteractionBox, schematic, player, getMaxTotalIterationsPerTick());
+        return this.sortedTargets.iterable(playerInteractionBox, level, schematic, player, getMaxTotalIterationsPerTick());
     }
 
     @Override

@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -79,7 +80,7 @@ public class FluidHandler extends Module {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        return this.getFilteredIterationPositions(playerInteractionBox, this::isTargetFluid);
+        return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.FLUID, this::isTargetFluid);
     }
 
     @Override

@@ -70,5 +70,6 @@ public class InitHandler implements IInitializationHandler {
         Mine.EXCAVATE_LIMIT.setValueChangeCallback(b -> ConfigUi.refresh());
         Fill.FILL_BLOCK_MODE.setValueChangeCallback(b -> ConfigUi.refresh());
         Core.LAG_CHECK.setValueChangeCallback(b -> ConfigUi.refresh());
+        Configs.Placement.RTT_ADAPTIVE_INTERVAL.setValueChangeCallback(b -> ConfigUi.refresh());
     }
 }

@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
@@ -103,7 +104,7 @@ public class FillHandler extends Module {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        return this.getFilteredIterationPositions(playerInteractionBox, this::canIterationBlockPos);
+        return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.FILL, this::canIterationBlockPos);
     }
 
     @Override

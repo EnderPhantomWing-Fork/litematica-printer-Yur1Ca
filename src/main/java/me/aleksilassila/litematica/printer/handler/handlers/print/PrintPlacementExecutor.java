@@ -17,11 +17,14 @@ import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 public final class PrintPlacementExecutor {
+    private static final Item[] EMPTY_HAND_ITEMS = {Items.AIR};
+
     public PrintPlacementResult execute(SchematicBlockContext context, Action action, @Nullable PrintTaskAction taskAction) {
         BlockPos blockPos = context.blockPos;
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && context.requiredState.getBlock() instanceof FallingBlock) {
@@ -39,11 +42,15 @@ public final class PrintPlacementExecutor {
             return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
         }
 
-        Item[] requiredItems = action.getRequiredItems(context.requiredState.getBlock());
+        Item[] requiredItems = normalizeRequiredItems(action.getRequiredItems(context.requiredState.getBlock()));
         if (!InventoryUtils.switchToItems(context.client.player, requiredItems)) {
             HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "缺少材料");
             // 缺少材料属于无效放置，不应消耗每 tick 的有效放置预算（与重构前行为一致）。
             return PrintPlacementResult.failure(false, shouldStopAfterTaskAction(taskAction));
+        }
+        if (!InventoryUtils.isHoldingAnyItem(context.client.player, requiredItems)) {
+            HudStatsManager.INSTANCE.recordDeferred(HudStatsManager.Mode.PRINT, "等待物品同步");
+            return PrintPlacementResult.failure(false, true);
         }
 
         boolean useShift = getUseShift(context, action, side);
@@ -68,7 +75,8 @@ public final class PrintPlacementExecutor {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.PRINT, "运行中");
         }
 
-        boolean skipIteration = needWaitModifyLook || shouldStopAfterTaskAction(taskAction);
+        boolean skipIteration = needWaitModifyLook
+                || shouldStopAfterTaskAction(taskAction);
         int cooldownTicks = action.getCooldownTicksOverride() >= 0
                 ? action.getCooldownTicksOverride()
                 : ConfigUtils.getPlaceCooldown();
@@ -97,6 +105,10 @@ public final class PrintPlacementExecutor {
             return new PlayerLook(playerLook.getYaw(), currentPitch);
         }
         return playerLook;
+    }
+
+    private static Item[] normalizeRequiredItems(@Nullable Item[] requiredItems) {
+        return requiredItems == null || requiredItems.length == 0 ? EMPTY_HAND_ITEMS : requiredItems;
     }
 
     private static boolean shouldStopAfterTaskAction(@Nullable PrintTaskAction taskAction) {

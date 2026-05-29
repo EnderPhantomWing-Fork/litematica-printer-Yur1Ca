@@ -7,6 +7,8 @@ import fi.dy.masa.malilib.config.options.ConfigOptionList;
 import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.*;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
@@ -92,6 +94,7 @@ public abstract class Module extends ConfigUtils {
             this.resetPlayerTracking();
             return;
         }
+        ScanCache.INSTANCE.beginTick(this.level, SchematicWorldHandler.getSchematicWorld(), context.gameTime);
         this.updatePlayerInteractionBox();
         this.preprocess(); // 运行前处理的事情
         if (!this.isConfigAllowExecute()) {
@@ -322,6 +325,19 @@ public abstract class Module extends ConfigUtils {
         int maxTotalIterations = this.getMaxTotalIterationsPerTick();
         int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
         return FilteredBlockPositions.create(playerInteractionBox.iterator(), scanLimit, candidatePredicate);
+    }
+
+    protected Iterable<BlockPos> getCachedFilteredIterationPositions(PrinterBox playerInteractionBox, ScanIntent intent, Predicate<BlockPos> candidatePredicate) {
+        return ScanCache.INSTANCE.iterable(
+                this.id,
+                playerInteractionBox,
+                this.level,
+                SchematicWorldHandler.getSchematicWorld(),
+                this.player,
+                this.getMaxTotalIterationsPerTick(),
+                intent,
+                candidatePredicate
+        );
     }
 
     protected void preprocess() {
