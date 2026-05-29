@@ -45,7 +45,30 @@ jobs:
       - name: Validate gradle wrapper
         uses: gradle/actions/wrapper-validation@v6
 
+      - name: Resolve Java version
+        id: java
+        if: ${{ inputs.target_version != 'all' }}
+        shell: bash
+        env:
+          TARGET_VERSION: ${{ inputs.target_version }}
+        run: |
+          case "$TARGET_VERSION" in
+            26.*) java="25" ;;
+            1.20.6|1.21.*) java="21" ;;
+            *) java="17" ;;
+          esac
+          echo "version=${java}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java ${{ steps.java.outputs.version }}
+        id: setup_java
+        if: ${{ inputs.target_version != 'all' }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ steps.java.outputs.version }}
+          distribution: 'temurin'
+
       - name: Setup Java 17
+        if: ${{ inputs.target_version == 'all' }}
         id: setup_java_17
         uses: actions/setup-java@v5
         with:
@@ -53,6 +76,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Java 21
+        if: ${{ inputs.target_version == 'all' }}
         id: setup_java_21
         uses: actions/setup-java@v5
         with:
@@ -60,6 +84,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Java 25
+        if: ${{ inputs.target_version == 'all' }}
         id: setup_java_25
         uses: actions/setup-java@v5
         with:
@@ -83,7 +108,7 @@ jobs:
 
       - name: Build ${{ inputs.target_version }}
         if: ${{ inputs.target_version != 'all' }}
-        run: ./gradlew :${{ inputs.target_version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+        run: ./gradlew :${{ inputs.target_version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java.outputs.path }}"
         env:
           TARGET_MC_VERSIONS: ${{ inputs.target_version }}
 

@@ -34,13 +34,31 @@ jobs:
         env:
           VERSION_SET: ${{ inputs.version_set }}
         run: |
+          resolve_java() {
+            case "$1" in
+              26.*) echo "25" ;;
+              1.20.6|1.21.*) echo "21" ;;
+              *) echo "17" ;;
+            esac
+          }
+
           if [ "$VERSION_SET" = "archive" ]; then
-            echo 'targets=["1.21.3","1.21.1","1.20.6","1.20.4","1.20.2","1.20.1","1.19.4","1.18.2"]' >> "$GITHUB_OUTPUT"
+            versions=("1.21.3" "1.21.1" "1.20.6" "1.20.4" "1.20.2" "1.20.1" "1.19.4" "1.18.2")
           elif [ "$VERSION_SET" = "all" ]; then
-            echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4","1.21.3","1.21.1","1.20.6","1.20.4","1.20.2","1.20.1","1.19.4","1.18.2"]' >> "$GITHUB_OUTPUT"
+            versions=("26.1" "1.21.11" "1.21.9" "1.21.6" "1.21.5" "1.21.4" "1.21.3" "1.21.1" "1.20.6" "1.20.4" "1.20.2" "1.20.1" "1.19.4" "1.18.2")
           else
-            echo 'targets=["26.1","1.21.11","1.21.9","1.21.6","1.21.5","1.21.4"]' >> "$GITHUB_OUTPUT"
+            versions=("26.1" "1.21.11" "1.21.9" "1.21.6" "1.21.5" "1.21.4")
           fi
+
+          json="["
+          separator=""
+          for version in "${versions[@]}"; do
+            java="$(resolve_java "$version")"
+            json="${json}${separator}{\"version\":\"${version}\",\"java\":\"${java}\"}"
+            separator=","
+          done
+          json="${json}]"
+          echo "targets=${json}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
@@ -48,32 +66,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ${{ fromJson(needs.plan.outputs.targets) }}
+        target: ${{ fromJson(needs.plan.outputs.targets) }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Validate gradle wrapper
         uses: gradle/actions/wrapper-validation@v6
 
-      - name: Setup Java 17
-        id: setup_java_17
+      - name: Setup Java ${{ matrix.target.java }}
+        id: setup_java
         uses: actions/setup-java@v5
         with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Java 21
-        id: setup_java_21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Setup Java 25
-        id: setup_java_25
-        uses: actions/setup-java@v5
-        with:
-          java-version: '25'
+          java-version: ${{ matrix.target.java }}
           distribution: 'temurin'
 
       - name: Cache Gradle dependencies
@@ -84,24 +88,25 @@ jobs:
             ~/.gradle/wrapper
             ./.gradle
             ./libs
-          key: ${{ runner.os }}-gradle-${{ matrix.version }}
+          key: ${{ runner.os }}-gradle-${{ matrix.target.version }}-java-${{ matrix.target.java }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-${{ matrix.target.version }}-java-${{ matrix.target.java }}-
             ${{ runner.os }}-gradle-
 
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build ${{ matrix.version }}
-        run: ./gradlew :${{ matrix.version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java_17.outputs.path }},${{ steps.setup_java_21.outputs.path }},${{ steps.setup_java_25.outputs.path }}"
+      - name: Build ${{ matrix.target.version }}
+        run: ./gradlew :${{ matrix.target.version }}:build --stacktrace -Dorg.gradle.java.installations.auto-detect=true -Dorg.gradle.java.installations.paths="${{ steps.setup_java.outputs.path }}"
         env:
           IS_THIS_RELEASE: true
-          TARGET_MC_VERSIONS: ${{ matrix.version }}
+          TARGET_MC_VERSIONS: ${{ matrix.target.version }}
 
       - name: Capture build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: build-${{ matrix.version }}
-          path: versions/${{ matrix.version }}/build/libs/*.jar
+          name: build-${{ matrix.target.version }}
+          path: versions/${{ matrix.target.version }}/build/libs/*.jar
           retention-days: 7
 
   build_wrapper:
@@ -142,8 +147,9 @@ jobs:
             ~/.gradle/wrapper
             ./.gradle
             ./libs
-          key: ${{ runner.os }}-gradle-wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-wrapper-
             ${{ runner.os }}-gradle-
 
       - name: Make gradle wrapper executable
