@@ -365,8 +365,35 @@ public abstract class Module extends ConfigUtils {
         Predicate<BlockPos> selection1Predicate = isSchematicBlockHandler() || !requiresSelection1ModeRangeCheck()
                 ? pos -> true
                 : LitematicaUtils.createSelection1RangePredicate();
-        return pos -> selection1Predicate.test(pos)
-                && (selectionType == null || ConfigUtils.isPositionInSelectionRange(player, pos, selectionType));
+        Predicate<BlockPos> configuredSelectionPredicate = this.createConfiguredSelectionRangePredicate();
+        return pos -> selection1Predicate.test(pos) && configuredSelectionPredicate.test(pos);
+    }
+
+    private Predicate<BlockPos> createConfiguredSelectionRangePredicate() {
+        if (this.selectionType == null) {
+            return pos -> true;
+        }
+        if (!(this.selectionType.getOptionListValue() instanceof SelectionType selectionType)) {
+            return pos -> false;
+        }
+        return switch (selectionType) {
+            case LITEMATICA_SELECTION -> pos -> true;
+            case LITEMATICA_RENDER_LAYER -> LitematicaUtils::isPositionWithinRange;
+            case LITEMATICA_SELECTION_BELOW_PLAYER -> {
+                if (this.player == null) {
+                    yield pos -> false;
+                }
+                int playerY = (int) Math.floor(this.player.getY());
+                yield pos -> pos.getY() <= playerY;
+            }
+            case LITEMATICA_SELECTION_ABOVE_PLAYER -> {
+                if (this.player == null) {
+                    yield pos -> false;
+                }
+                int playerY = (int) Math.ceil(this.player.getY());
+                yield pos -> pos.getY() >= playerY;
+            }
+        };
     }
 
     public boolean canIterationBlockPos(BlockPos pos) {
