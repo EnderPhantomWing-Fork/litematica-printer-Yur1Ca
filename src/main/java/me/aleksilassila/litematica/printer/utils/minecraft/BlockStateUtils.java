@@ -2,10 +2,12 @@ package me.aleksilassila.litematica.printer.utils.minecraft;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.*;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -109,6 +111,18 @@ public class BlockStateUtils extends BlockUtils {
                 || blockState.getBlock() instanceof BubbleColumnBlock;
     }
 
+    public static boolean hasSourceWaterFluid(BlockState blockState) {
+        FluidState fluidState = blockState.getFluidState();
+        return fluidState.is(FluidTags.WATER) && fluidState.isSource();
+    }
+
+    private static boolean isSourceWaterOrBubbleColumn(BlockState blockState) {
+        if (!hasSourceWaterFluid(blockState)) {
+            return false;
+        }
+        return blockState.is(Blocks.WATER) || blockState.getBlock() instanceof BubbleColumnBlock;
+    }
+
     /**
      * 判断该方块是否需要水中才能放置（水生植物等）。
      * 这些方块虽然 canSurvive 可能返回 true（只检查支撑），但实际放置需要水。
@@ -124,11 +138,17 @@ public class BlockStateUtils extends BlockUtils {
     }
 
     public static boolean isCorrectWaterLevel(BlockState requiredState, BlockState currentState) {
-        if (!currentState.is(Blocks.WATER)) return false;
-        if (requiredState.is(Blocks.WATER) && currentState.getValue(LiquidBlock.LEVEL).equals(requiredState.getValue(LiquidBlock.LEVEL))) {
-            return true;
-        } else {
-            return currentState.getValue(LiquidBlock.LEVEL) == 0;
+        if (requiredState.is(Blocks.WATER)) {
+            if (currentState.is(Blocks.WATER)) {
+                return currentState.getValue(LiquidBlock.LEVEL).equals(requiredState.getValue(LiquidBlock.LEVEL));
+            }
+            return requiredState.getValue(LiquidBlock.LEVEL) == 0
+                    && currentState.getBlock() instanceof BubbleColumnBlock
+                    && hasSourceWaterFluid(currentState);
         }
+        if (requiredState.getBlock() instanceof BubbleColumnBlock) {
+            return isSourceWaterOrBubbleColumn(currentState);
+        }
+        return isSourceWaterOrBubbleColumn(currentState);
     }
 }

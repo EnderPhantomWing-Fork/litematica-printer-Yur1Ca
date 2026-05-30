@@ -53,7 +53,7 @@ public abstract class Guide extends BlockStateUtils {
         if (BlockStateUtils.requiresWaterToPlace(requiredBlock)) {
             BlockPos waterPos = requiredState.hasProperty(BlockStateProperties.WATERLOGGED)
                     ? blockPos : blockPos.above();
-            if (!level.getBlockState(waterPos).is(Blocks.WATER)) {
+            if (!BlockStateUtils.hasSourceWaterFluid(level.getBlockState(waterPos))) {
                 return Result.PASS;
             }
         }
