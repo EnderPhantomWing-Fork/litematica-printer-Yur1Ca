@@ -8,12 +8,13 @@ import fi.dy.masa.litematica.selection.SelectionMode;
 import fi.dy.masa.litematica.util.EasyPlaceProtocol;
 import fi.dy.masa.litematica.util.PlacementHandler;
 import me.aleksilassila.litematica.printer.config.Configs;
-import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 //#if MC < 11900
 //$$ import fi.dy.masa.malilib.util.SubChunkPos;
@@ -78,9 +79,72 @@ public class LitematicaUtils {
         }
     }
 
+    public static Predicate<BlockPos> createSelection1RangePredicate() {
+        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
+        if (selection == null) return pos -> false;
+        if (DataManager.getSelectionManager().getSelectionMode() == SelectionMode.NORMAL) {
+            List<Box> arr = selection.getAllSubRegionBoxes();
+            List<Bounds> bounds = new ArrayList<>(arr.size());
+            for (Box box : arr) {
+                Bounds bound = Bounds.from(box);
+                if (bound != null) {
+                    bounds.add(bound);
+                }
+            }
+            return pos -> {
+                for (Bounds bound : bounds) {
+                    if (bound.contains(pos)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+        } else {
+            Box box = selection.getSubRegionBox(DataManager.getSimpleArea().getName());
+            Bounds bounds = Bounds.from(box);
+            return bounds == null ? pos -> false : bounds::contains;
+        }
+    }
+
     static boolean comparePos(Box box, BlockPos pos) {
         if (box == null || box.getPos1() == null || box.getPos2() == null || pos == null) return false;
-        PrinterBox printerBox = new PrinterBox(box.getPos1(), box.getPos2());
-        return printerBox.contains(pos);
+        BlockPos pos1 = box.getPos1();
+        BlockPos pos2 = box.getPos2();
+        int minX = Math.min(pos1.getX(), pos2.getX());
+        int minY = Math.min(pos1.getY(), pos2.getY());
+        int minZ = Math.min(pos1.getZ(), pos2.getZ());
+        int maxX = Math.max(pos1.getX(), pos2.getX());
+        int maxY = Math.max(pos1.getY(), pos2.getY());
+        int maxZ = Math.max(pos1.getZ(), pos2.getZ());
+        return pos.getX() >= minX && pos.getX() <= maxX
+                && pos.getY() >= minY && pos.getY() <= maxY
+                && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+    }
+
+    private record Bounds(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        static Bounds from(Box box) {
+            if (box == null || box.getPos1() == null || box.getPos2() == null) {
+                return null;
+            }
+            BlockPos pos1 = box.getPos1();
+            BlockPos pos2 = box.getPos2();
+            return new Bounds(
+                    Math.min(pos1.getX(), pos2.getX()),
+                    Math.min(pos1.getY(), pos2.getY()),
+                    Math.min(pos1.getZ(), pos2.getZ()),
+                    Math.max(pos1.getX(), pos2.getX()),
+                    Math.max(pos1.getY(), pos2.getY()),
+                    Math.max(pos1.getZ(), pos2.getZ())
+            );
+        }
+
+        boolean contains(BlockPos pos) {
+            if (pos == null) {
+                return false;
+            }
+            return pos.getX() >= minX && pos.getX() <= maxX
+                    && pos.getY() >= minY && pos.getY() <= maxY
+                    && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+        }
     }
 }

@@ -71,6 +71,20 @@ public final class ScanCache {
             ScanIntent intent,
             Predicate<BlockPos> exactPredicate
     ) {
+        return this.iterable(ownerKey, sourceBox, level, schematic, player, maxTotalIterations, intent, exactPredicate, pos -> true);
+    }
+
+    public Iterable<BlockPos> iterable(
+            String ownerKey,
+            PrinterBox sourceBox,
+            ClientLevel level,
+            WorldSchematic schematic,
+            LocalPlayer player,
+            int maxTotalIterations,
+            ScanIntent intent,
+            Predicate<BlockPos> exactPredicate,
+            Predicate<BlockPos> preFilter
+    ) {
         int scanLimit = this.getScanLimit(maxTotalIterations);
         int asyncLimit = Math.min(MAX_ASYNC_PREFIX, Math.max(0, scanLimit / 4));
         List<BlockPos> asyncPositions = this.asyncPlanner.take(ownerKey, sourceBox, asyncLimit);
@@ -97,7 +111,7 @@ public final class ScanCache {
 
                 while (this.asyncIterator.hasNext()) {
                     BlockPos pos = this.asyncIterator.next();
-                    if (this.emitted.add(key(pos))) {
+                    if (preFilter.test(pos) && this.emitted.add(key(pos))) {
                         this.next = pos;
                         return;
                     }
@@ -106,6 +120,9 @@ public final class ScanCache {
                 while (this.sourceIterator.hasNext() && this.scanned < scanLimit) {
                     BlockPos pos = this.sourceIterator.next();
                     this.scanned++;
+                    if (!preFilter.test(pos)) {
+                        continue;
+                    }
                     Entry entry = sample(level, schematic, pos, intent == ScanIntent.PRINT);
                     byte flags = entry.flags();
                     if (!intent.shouldConsider(flags)) {

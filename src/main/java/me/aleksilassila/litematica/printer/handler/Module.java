@@ -200,11 +200,8 @@ public abstract class Module extends ConfigUtils {
                     this.guiBlockInfoBuffer.add(gui);
                     continue;
                 }
-            } else if (requiresSelection1ModeRangeCheck() && !LitematicaUtils.isWithinSelection1ModeRange(pos)) {
-                this.guiBlockInfoBuffer.add(gui);
-                continue;
             }
-            if (selectionType != null && !ConfigUtils.isPositionInSelectionRange(player, pos, selectionType)) {
+            if (!this.isInSelectionRange(pos)) {
                 if (gui != null) {
                     gui.posInSelectionRange = false;
                 }
@@ -353,6 +350,23 @@ public abstract class Module extends ConfigUtils {
 
     protected boolean canReachIterationPosition(BlockPos pos) {
         return ConfigUtils.canInteracted(pos);
+    }
+
+    protected boolean isInSelectionRange(BlockPos pos) {
+        if (!isSchematicBlockHandler()
+                && requiresSelection1ModeRangeCheck()
+                && !LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+            return false;
+        }
+        return selectionType == null || ConfigUtils.isPositionInSelectionRange(player, pos, selectionType);
+    }
+
+    protected Predicate<BlockPos> createSelectionRangePredicate() {
+        Predicate<BlockPos> selection1Predicate = isSchematicBlockHandler() || !requiresSelection1ModeRangeCheck()
+                ? pos -> true
+                : LitematicaUtils.createSelection1RangePredicate();
+        return pos -> selection1Predicate.test(pos)
+                && (selectionType == null || ConfigUtils.isPositionInSelectionRange(player, pos, selectionType));
     }
 
     public boolean canIterationBlockPos(BlockPos pos) {

@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.FillBlockModeType;
@@ -7,6 +8,7 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
@@ -27,6 +29,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 public class FillHandler extends Module {
     public final static String NAME = "fill";
@@ -104,7 +107,18 @@ public class FillHandler extends Module {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.FILL, this::canIterationBlockPos);
+        Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
+        return ScanCache.INSTANCE.iterable(
+                this.getId(),
+                playerInteractionBox,
+                this.level,
+                SchematicWorldHandler.getSchematicWorld(),
+                this.player,
+                this.getMaxTotalIterationsPerTick(),
+                ScanIntent.FILL,
+                this::canIterationBlockPos,
+                pos -> this.canReachIterationPosition(pos) && selectionPredicate.test(pos)
+        );
     }
 
     @Override
