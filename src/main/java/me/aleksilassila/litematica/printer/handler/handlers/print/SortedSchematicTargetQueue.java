@@ -30,17 +30,17 @@ public final class SortedSchematicTargetQueue {
         this.hasMoreSource = false;
     }
 
-    public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int maxTotalIterations) {
-        if (this.box != sourceBox) {
+    public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
+        if (this.box == null || !this.box.equals(sourceBox)) {
             this.queue.clear();
             this.box = sourceBox;
         }
-        this.fill(sourceBox, level, schematic, player, maxTotalIterations);
+        this.fill(sourceBox, level, schematic, player, scanGuardLimit);
         return this::iterator;
     }
 
-    private void fill(PrinterBox sourceBox, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int maxTotalIterations) {
-        int collectLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
+    private void fill(PrinterBox sourceBox, ClientLevel level, WorldSchematic schematic, LocalPlayer player, int scanGuardLimit) {
+        int collectLimit = scanGuardLimit > 0 ? scanGuardLimit : Integer.MAX_VALUE;
         boolean previousHasMoreSource = this.hasMoreSource;
         List<BlockPos> positions = new ArrayList<>();
         Set<Long> queuedKeys = new HashSet<>();
@@ -57,7 +57,7 @@ public final class SortedSchematicTargetQueue {
                     level,
                     schematic,
                     player,
-                    maxTotalIterations,
+                    scanGuardLimit,
                     ScanIntent.PRINT,
                     pos -> true
             );

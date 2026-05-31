@@ -161,7 +161,7 @@ public abstract class Module extends ConfigUtils {
 
     private boolean runIterationLoop(PrinterBox playerInteractionBox) {
         int maxEffectiveExec = this.getMaxEffectiveExecutionsPerTick();
-        int maxTotalIter = this.getMaxTotalIterationsPerTick();
+        int scanGuardLimit = this.getScanGuardLimit();
         int totalIterCount = 0;
         int effectiveExecCount = 0;
         boolean interrupt = false;
@@ -171,7 +171,7 @@ public abstract class Module extends ConfigUtils {
 
         Iterable<BlockPos> iterationPositions = this.getIterationPositions(playerInteractionBox);
         for (BlockPos pos : iterationPositions) {
-            if (maxTotalIter > 0 && totalIterCount++ >= maxTotalIter) {
+            if (scanGuardLimit > 0 && totalIterCount++ >= scanGuardLimit) {
                 interrupt = true;
                 break;
             }
@@ -310,8 +310,8 @@ public abstract class Module extends ConfigUtils {
         return -1;
     }
 
-    protected int getMaxTotalIterationsPerTick() {
-        return Configs.Core.ITERATOR_TOTAL_PER_TICK.getIntegerValue();
+    protected int getScanGuardLimit() {
+        return 65_536;
     }
 
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
@@ -319,22 +319,61 @@ public abstract class Module extends ConfigUtils {
     }
 
     protected Iterable<BlockPos> getFilteredIterationPositions(PrinterBox playerInteractionBox, Predicate<BlockPos> candidatePredicate) {
-        int maxTotalIterations = this.getMaxTotalIterationsPerTick();
-        int scanLimit = maxTotalIterations > 0 ? maxTotalIterations : Integer.MAX_VALUE;
-        return FilteredBlockPositions.create(playerInteractionBox.iterator(), scanLimit, candidatePredicate);
+        return ScanCache.INSTANCE.rawIterable(
+                this.id + "_raw",
+                playerInteractionBox,
+                this.player,
+                this.getScanGuardLimit(),
+                candidatePredicate
+        );
     }
 
     protected Iterable<BlockPos> getCachedFilteredIterationPositions(PrinterBox playerInteractionBox, ScanIntent intent, Predicate<BlockPos> candidatePredicate) {
+        PrinterBox scanSourceBox = this.getScanSourceBox(playerInteractionBox);
+        if (scanSourceBox == null) {
+            return java.util.List.of();
+        }
+        Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
         return ScanCache.INSTANCE.iterable(
                 this.id,
-                playerInteractionBox,
+                scanSourceBox,
                 this.level,
                 SchematicWorldHandler.getSchematicWorld(),
                 this.player,
-                this.getMaxTotalIterationsPerTick(),
+                this.getScanGuardLimit(),
                 intent,
-                candidatePredicate
+                candidatePredicate,
+                pos -> this.canReachIterationPosition(pos) && selectionPredicate.test(pos)
         );
+    }
+
+    @Nullable
+    protected PrinterBox getScanSourceBox(PrinterBox playerInteractionBox) {
+        if (playerInteractionBox == null) {
+            return null;
+        }
+        if (isSchematicBlockHandler() || !requiresSelection1ModeRangeCheck()) {
+            return playerInteractionBox;
+        }
+        PrinterBox selectionBox = LitematicaUtils.createSelection1BoundingBox();
+        if (selectionBox == null) {
+            return null;
+        }
+        return intersect(playerInteractionBox, selectionBox);
+    }
+
+    @Nullable
+    private static PrinterBox intersect(PrinterBox first, PrinterBox second) {
+        int minX = Math.max(first.minX, second.minX);
+        int minY = Math.max(first.minY, second.minY);
+        int minZ = Math.max(first.minZ, second.minZ);
+        int maxX = Math.min(first.maxX, second.maxX);
+        int maxY = Math.min(first.maxY, second.maxY);
+        int maxZ = Math.min(first.maxZ, second.maxZ);
+        if (minX > maxX || minY > maxY || minZ > maxZ) {
+            return null;
+        }
+        return new PrinterBox(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     protected void preprocess() {

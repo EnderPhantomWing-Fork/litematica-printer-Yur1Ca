@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
@@ -15,12 +16,12 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
-import net.minecraft.world.level.material.Fluids;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 public class FluidHandler extends Module {
     public final static String NAME = "fluid";
@@ -38,12 +39,17 @@ public class FluidHandler extends Module {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+        return 0;
     }
 
     @Override
     protected int getMaxEffectiveExecutionsPerTick() {
-        return Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue();
+        return 0;
+    }
+
+    @Override
+    protected int getScanGuardLimit() {
+        return 0;
     }
 
     @Override
@@ -80,7 +86,21 @@ public class FluidHandler extends Module {
 
     @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.FLUID, this::isTargetFluid);
+        PrinterBox scanSourceBox = this.getScanSourceBox(playerInteractionBox);
+        if (scanSourceBox == null) {
+            return List.of();
+        }
+        Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
+        return ScanCache.INSTANCE.unboundedIterable(
+                NAME,
+                scanSourceBox,
+                this.level,
+                null,
+                this.player,
+                ScanIntent.FLUID,
+                this::isTargetFluid,
+                pos -> this.canReachIterationPosition(pos) && selectionPredicate.test(pos)
+        );
     }
 
     @Override
@@ -108,7 +128,6 @@ public class FluidHandler extends Module {
         } else {
             HudStatsManager.INSTANCE.recordStatus(HudStatsManager.Mode.FLUID, "运行中");
         }
-        setBlockPosCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
     }
 
     private boolean isTargetFluid(BlockPos blockPos) {

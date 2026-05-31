@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.printer;
 
-import me.aleksilassila.litematica.printer.enums.IterationOrderType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Vec3i;
 import org.jetbrains.annotations.NotNull;
@@ -14,11 +13,6 @@ public class PrinterBox implements Iterable<BlockPos> {
     public static final Minecraft client = Minecraft.getInstance();
     public final int minX, minY, minZ;
     public final int maxX, maxY, maxZ;
-    public boolean yIncrement = true;
-    public boolean xIncrement = true;
-    public boolean zIncrement = true;
-    public IterationOrderType iterationMode = IterationOrderType.XZY;
-    private Iterator<BlockPos> iterator;
 
     public PrinterBox(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
         this.minX = Math.min(minX, maxX);
@@ -73,10 +67,7 @@ public class PrinterBox implements Iterable<BlockPos> {
 
     @Override
     public @NotNull Iterator<BlockPos> iterator() {
-        if (this.iterator == null) {
-            this.iterator = new BoxIterator();
-        }
-        return this.iterator;
+        return new BoxIterator();
     }
 
     @Override
@@ -101,11 +92,7 @@ public class PrinterBox implements Iterable<BlockPos> {
             int y = currPos.getY();
             int z = currPos.getZ();
 
-            int targetX = xIncrement ? maxX : minX;
-            int targetY = yIncrement ? maxY : minY;
-            int targetZ = zIncrement ? maxZ : minZ;
-
-            return !(x == targetX && y == targetY && z == targetZ);
+            return !(x == maxX && y == maxY && z == maxZ);
         }
 
         @Override
@@ -113,43 +100,27 @@ public class PrinterBox implements Iterable<BlockPos> {
             // 初始化起始位置
             if (currPos == null) {
                 currPos = new BlockPos(
-                        IterationOrderType.Axis.X.reset(PrinterBox.this),
-                        IterationOrderType.Axis.Y.reset(PrinterBox.this),
-                        IterationOrderType.Axis.Z.reset(PrinterBox.this)
+                        minX,
+                        minY,
+                        minZ
                 );
                 return currPos;
             }
 
-            // 复制当前坐标，避免直接修改原对象
             int x = currPos.getX();
             int y = currPos.getY();
             int z = currPos.getZ();
 
-            // 获取当前迭代模式的轴优先级，通用处理所有轴迭代（无任何switch）
-            for (IterationOrderType.Axis axis : iterationMode.axis) {
-                // 对当前轴执行增量
-                int newValue = axis.increment(PrinterBox.this, axis.getCoord(PrinterBox.this, x, y, z));
-
-                // 检查是否溢出
-                if (axis.isOverflow(PrinterBox.this, newValue)) {
-                    // 溢出则重置当前轴，继续处理下一个轴
-                    switch (axis) {
-                        case X -> x = axis.reset(PrinterBox.this);
-                        case Y -> y = axis.reset(PrinterBox.this);
-                        case Z -> z = axis.reset(PrinterBox.this);
-                    }
-                } else {
-                    // 未溢出则更新当前轴坐标，终止循环
-                    switch (axis) {
-                        case X -> x = newValue;
-                        case Y -> y = newValue;
-                        case Z -> z = newValue;
-                    }
-                    break;
+            x++;
+            if (x > maxX) {
+                x = minX;
+                z++;
+                if (z > maxZ) {
+                    z = minZ;
+                    y++;
                 }
             }
 
-            // 更新当前位置并返回
             currPos = new BlockPos(x, y, z);
             return currPos;
         }

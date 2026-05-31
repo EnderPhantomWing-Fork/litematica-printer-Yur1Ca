@@ -23,18 +23,12 @@ public enum ScanIntent {
     FILL {
         @Override
         public boolean shouldConsider(byte flags) {
-            return ScanFlags.has(flags, ScanFlags.BASE_FILL_TARGET)
-                    || ScanFlags.has(flags, ScanFlags.WORLD_NON_AIR);
-        }
-
-        @Override
-        public boolean acceptsByFlags(byte flags) {
             return ScanFlags.has(flags, ScanFlags.BASE_FILL_TARGET);
         }
 
         @Override
         public boolean shouldRunExactPredicate(byte flags) {
-            return ScanFlags.has(flags, ScanFlags.WORLD_NON_AIR);
+            return this.shouldConsider(flags);
         }
     },
     CUSTOM {

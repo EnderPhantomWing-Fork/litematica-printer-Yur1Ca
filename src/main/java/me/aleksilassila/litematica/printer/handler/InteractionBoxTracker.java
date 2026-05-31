@@ -1,7 +1,6 @@
 package me.aleksilassila.litematica.printer.handler;
 
 import me.aleksilassila.litematica.printer.config.Configs;
-import me.aleksilassila.litematica.printer.enums.IterationOrderType;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.PlayerUtils;
@@ -36,33 +35,44 @@ final class InteractionBoxTracker {
         if (this.boxReference == null) {
             return;
         }
-        BlockPos playerPos = player.blockPosition();
-        double threshold = ConfigUtils.getWorkRange() * 0.7;
+        BlockPos playerPos = trackingPos(player);
+        double range = getBoxRange();
+        double threshold = Math.max(1.5D, Math.min(8.0D, range * 0.15D));
         @Nullable PrinterBox box = this.boxReference.get();
         if (box == null
                 || !box.equals(this.lastBox)
                 || this.lastPlayerPos == null
                 || !this.lastPlayerPos.closerThan(playerPos, threshold)) {
             this.lastPlayerPos = playerPos;
-            box = this.createBox(playerPos);
+            box = this.createBox(player, range);
             this.lastBox = box;
             this.boxReference.set(box);
         }
-        syncIterationConfig(box);
     }
 
-    private PrinterBox createBox(BlockPos playerPos) {
-        PrinterBox box = new PrinterBox(playerPos);
+    private PrinterBox createBox(LocalPlayer player, double range) {
+        int minX = (int) Math.floor(player.getX() - range);
+        int maxX = (int) Math.ceil(player.getX() + range);
+        int minY = (int) Math.floor(player.getEyeY() - range);
+        int maxY = (int) Math.ceil(player.getEyeY() + range);
+        int minZ = (int) Math.floor(player.getZ() - range);
+        int maxZ = (int) Math.ceil(player.getZ() + range);
+        return new PrinterBox(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private static double getBoxRange() {
         if (Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()) {
-            return box.expand((int) Math.ceil(PlayerUtils.getPlayerBlockInteractionRange(5) + 3));
+            return PlayerUtils.getPlayerBlockInteractionRange(5) + 3.0D;
         }
-        return box.expand(ConfigUtils.getWorkRange());
+        return ConfigUtils.getWorkRange();
     }
 
-    private static void syncIterationConfig(PrinterBox box) {
-        box.iterationMode = (IterationOrderType) Configs.Core.ITERATION_ORDER.getOptionListValue();
-        box.xIncrement = !Configs.Core.X_REVERSE.getBooleanValue();
-        box.yIncrement = !Configs.Core.Y_REVERSE.getBooleanValue();
-        box.zIncrement = !Configs.Core.Z_REVERSE.getBooleanValue();
+    private static BlockPos trackingPos(LocalPlayer player) {
+        return new BlockPos(
+                (int) Math.floor(player.getX()),
+                (int) Math.floor(player.getEyeY()),
+                (int) Math.floor(player.getZ())
+        );
     }
+
 }

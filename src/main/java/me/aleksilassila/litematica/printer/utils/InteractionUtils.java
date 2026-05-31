@@ -103,6 +103,14 @@ public class InteractionUtils {
         return !TweakerooUtils.isToolTooDamagedForBreaking(stack);
     }
 
+    public static int getCurrentToolSafeBreakBudget() {
+        LocalPlayer player = client.player;
+        if (player == null || player.getAbilities().instabuild) {
+            return Integer.MAX_VALUE;
+        }
+        return TweakerooUtils.getSafeBreakBudget(player.getMainHandItem());
+    }
+
     public static boolean protectCurrentToolBeforeBreak() {
         return protectCurrentToolBeforeBreak(null);
     }

@@ -104,7 +104,7 @@ public class PrintHandler extends Module {
             this.sortedTargets.clear();
             return playerInteractionBox;
         }
-        return this.sortedTargets.iterable(playerInteractionBox, level, schematic, player, getMaxTotalIterationsPerTick());
+        return this.sortedTargets.iterable(playerInteractionBox, level, schematic, player, getScanGuardLimit());
     }
 
     @Override

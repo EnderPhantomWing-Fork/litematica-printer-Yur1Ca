@@ -129,6 +129,14 @@ public class TweakerooUtils {
         return remainingDurability <= getMinDurability(stack);
     }
 
+    public static int getSafeBreakBudget(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.isDamageableItem() || !isSwapAlmostBrokenToolsEnabled()) {
+            return Integer.MAX_VALUE;
+        }
+        int remainingDurability = stack.getMaxDamage() - stack.getDamageValue();
+        return Math.max(0, remainingDurability - getMinDurability(stack));
+    }
+
     private static int getMinDurability(ItemStack stack) {
         int threshold = getItemSwapDurabilityThreshold();
         int maxDamage = stack.getMaxDamage();

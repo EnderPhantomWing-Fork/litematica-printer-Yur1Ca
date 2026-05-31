@@ -16,12 +16,29 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.IdentityHashMap;
+import java.util.Map;
+
 final class MineBreakExecutor {
     private static final Minecraft CLIENT = Minecraft.getInstance();
     private static final float FAST_FINISH_PROGRESS = 0.5F;
     private static final float CURRENT_TOOL_MIN_EFFICIENCY_RATIO = 0.75F;
 
+    private final Map<BlockState, Float> currentProgressCache = new IdentityHashMap<>();
+    private final Map<BlockState, ToolChoice> bestToolCache = new IdentityHashMap<>();
+    private boolean resolveBestTool;
+
+    public void beginTick() {
+        this.currentProgressCache.clear();
+        this.bestToolCache.clear();
+        this.resolveBestTool = Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()
+                || ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isToolSwitchEnabled();
+    }
+
     public void reset() {
+        this.currentProgressCache.clear();
+        this.bestToolCache.clear();
+        this.resolveBestTool = false;
     }
 
     @Nullable
@@ -36,7 +53,10 @@ final class MineBreakExecutor {
             return null;
         }
         ItemStack currentStack = player.getMainHandItem();
-        float currentProgress = this.getDestroyProgress(player, state, player.getMainHandItem());
+        if (player.getAbilities().instabuild) {
+            return new Target(pos.immutable(), state, 1.0F, 1.0F, Direction.DOWN, currentStack.getItem());
+        }
+        float currentProgress = this.getCurrentProgress(player, state, currentStack);
         ToolChoice toolChoice = this.getBestToolChoice(player, state, currentStack, currentProgress);
         float bestProgress = toolChoice.progress();
         if (bestProgress <= 0.0F && !player.getAbilities().instabuild) {
@@ -79,10 +99,16 @@ final class MineBreakExecutor {
     }
 
     private ToolChoice getBestToolChoice(LocalPlayer player, BlockState state, ItemStack currentStack, float currentProgress) {
+        ToolChoice cached = this.bestToolCache.get(state);
+        if (cached != null) {
+            return cached;
+        }
         float bestProgress = currentProgress;
         Item bestItem = currentStack.getItem();
         if (!this.shouldResolveBestTool()) {
-            return new ToolChoice(bestItem, bestProgress);
+            ToolChoice choice = new ToolChoice(bestItem, bestProgress);
+            this.bestToolCache.put(state, choice);
+            return choice;
         }
         for (ItemStack stack : InventoryUtils.getMainStacks(player.getInventory())) {
             if (stack.isEmpty()) {
@@ -94,12 +120,13 @@ final class MineBreakExecutor {
                 bestItem = stack.getItem();
             }
         }
-        return new ToolChoice(bestItem, bestProgress);
+        ToolChoice choice = new ToolChoice(bestItem, bestProgress);
+        this.bestToolCache.put(state, choice);
+        return choice;
     }
 
     private boolean shouldResolveBestTool() {
-        return Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()
-                || ModLoadUtils.isTweakerooLoaded() && TweakerooUtils.isToolSwitchEnabled();
+        return this.resolveBestTool;
     }
 
     private boolean isCurrentToolEfficient(Target target) {
@@ -125,6 +152,16 @@ final class MineBreakExecutor {
         }
         int divisor = (!state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state)) ? 30 : 100;
         return PlayerUtils.getBlockBreakingSpeed(player, state, stack) / hardness / (float) divisor;
+    }
+
+    private float getCurrentProgress(LocalPlayer player, BlockState state, ItemStack stack) {
+        Float cached = this.currentProgressCache.get(state);
+        if (cached != null) {
+            return cached;
+        }
+        float progress = this.getDestroyProgress(player, state, stack);
+        this.currentProgressCache.put(state, progress);
+        return progress;
     }
 
     public static final class Target {

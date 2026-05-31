@@ -65,8 +65,9 @@ public class BedrockHandler extends Module {
         return this.candidatePlanner.iterable(
                 playerInteractionBox,
                 this.level,
+                this.player,
                 this.getMaxEffectiveExecutionsPerTick(),
-                this.getMaxTotalIterationsPerTick()
+                this.getScanGuardLimit()
         );
     }
 

@@ -288,7 +288,7 @@ public final class HudStatsManager {
     }
 
     private static final class RollingCounter {
-        private static final int MAX_EVENTS = 2048;
+        private static final int MAX_EVENTS = 32768;
         private final long[] timestamps = new long[MAX_EVENTS];
         private final int[] values = new int[MAX_EVENTS];
         private int head;
@@ -300,10 +300,6 @@ public final class HudStatsManager {
         }
 
         private void reset() {
-            for (int i = 0; i < MAX_EVENTS; i++) {
-                this.timestamps[i] = 0L;
-                this.values[i] = 0;
-            }
             this.head = 0;
             this.size = 0;
             this.total = 0;

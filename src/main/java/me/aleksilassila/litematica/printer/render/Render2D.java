@@ -388,10 +388,9 @@ public class Render2D {
 
     private String formatModeSettings(HudStatsManager.Mode mode) {
         return switch (mode) {
-            case PRINT, FILL, FLUID -> Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue()
+            case PRINT, FILL -> Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue()
                     + "/t 间隔" + Configs.Placement.PLACE_INTERVAL.getIntegerValue();
-            case MINE -> Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue()
-                    + "/t 间隔" + Configs.Break.BREAK_INTERVAL.getIntegerValue();
+            case MINE, FLUID -> "不限速";
             case BEDROCK -> Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue()
                     + "/t 间隔" + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
             case TOTAL -> "--";

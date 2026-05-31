@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -62,8 +63,31 @@ final class AsyncScanCandidatePlanner {
         return positions;
     }
 
+    void invalidateSection(int sectionX, int sectionY, int sectionZ) {
+        for (Map.Entry<String, List<ScanSnapshot>> entry : this.completed.entrySet()) {
+            List<ScanSnapshot> snapshots = entry.getValue();
+            List<ScanSnapshot> filtered = new ArrayList<>(snapshots.size());
+            for (ScanSnapshot snapshot : snapshots) {
+                if (sectionCoord(snapshot.x()) != sectionX
+                        || sectionCoord(snapshot.y()) != sectionY
+                        || sectionCoord(snapshot.z()) != sectionZ) {
+                    filtered.add(snapshot);
+                }
+            }
+            if (filtered.isEmpty()) {
+                this.completed.remove(entry.getKey(), snapshots);
+            } else if (filtered.size() != snapshots.size()) {
+                this.completed.replace(entry.getKey(), snapshots, filtered);
+            }
+        }
+    }
+
     void clear() {
         this.completed.clear();
         this.running.clear();
+    }
+
+    private static int sectionCoord(int blockCoord) {
+        return blockCoord >> 4;
     }
 }

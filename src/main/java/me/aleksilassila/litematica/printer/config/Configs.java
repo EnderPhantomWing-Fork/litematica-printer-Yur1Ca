@@ -124,9 +124,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 256)
                 .build();
 
-        public static final ConfigInteger ITERATOR_TOTAL_PER_TICK = integer("workIterationsTotalPerTick")
-                .defaultValue(2744)
-                .range(0, 1919810)
+        public static final ConfigInteger SCAN_TIME_BUDGET_US = integer("scanTimeBudgetUs")
+                .defaultValue(1000)
+                .range(250, 2000)
                 .build();
 
         // 核心 - 检查玩家方块交互范围
@@ -148,26 +148,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 核心 - 迭代区域形状
         public static final ConfigOptionList ITERATOR_SHAPE = optionList("printerIteratorShape")
                 .defaultValue(RadiusShapeType.SPHERE)
-                .build();
-
-        // 核心 - 遍历顺序
-        public static final ConfigOptionList ITERATION_ORDER = optionList("printerIteratorMode")
-                .defaultValue(IterationOrderType.XZY)
-                .build();
-
-        // 核心 - 迭代X轴反向
-        public static final ConfigBoolean X_REVERSE = bool("printerXAxisReverse")
-                .defaultValue(false)
-                .build();
-
-        // 核心 - 迭代Y轴反向
-        public static final ConfigBoolean Y_REVERSE = bool("printerYAxisReverse")
-                .defaultValue(false)
-                .build();
-
-        // 核心 - 迭代Z轴反向
-        public static final ConfigBoolean Z_REVERSE = bool("printerZAxisReverse")
-                .defaultValue(false)
                 .build();
 
         // 核心 - 显示打印机HUD
@@ -236,7 +216,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 FILL,
                 FLUID,
                 WORK_RANGE,
-                ITERATOR_TOTAL_PER_TICK,
+                SCAN_TIME_BUDGET_US,
                 RENDER_HUD,
                 RENDER_HUD_X,
                 RENDER_HUD_Y,
@@ -245,10 +225,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 LAG_CHECK_MAX,
                 CHECK_PLAYER_INTERACTION_RANGE,
                 ITERATOR_SHAPE,
-                ITERATION_ORDER,
-                X_REVERSE,
-                Y_REVERSE,
-                Z_REVERSE,
                 AUTO_DISABLE_PRINTER,
                 UPDATE_CHECK,
                 CLOUD_INVENTORY,
@@ -418,8 +394,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_AUTO_TOOL,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_USE_PACKET,
-                BREAK_INTERVAL,
-                BREAK_BLOCKS_PER_TICK,
                 BREAK_COOLDOWN,
                 BREAK_PROGRESS_THRESHOLD,
                 // 限制器

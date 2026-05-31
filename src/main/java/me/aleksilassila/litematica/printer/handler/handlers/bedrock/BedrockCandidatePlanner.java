@@ -1,9 +1,12 @@
 package me.aleksilassila.litematica.printer.handler.handlers.bedrock;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
+import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.utils.mods.LitematicaUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
@@ -22,13 +25,13 @@ public final class BedrockCandidatePlanner {
     /**
      * 单 tick 内允许执行的"重型建模"(buildCandidate:layout 查找 + 双火把探测 + 13 格调度惩罚 + 6 邻居检测)次数上限。
      * 廉价过滤(空气/非基岩/冷却)不计入此预算。大交互距离下命中的基岩极多,若不设上限会在单 tick 内对成百上千个基岩
-     * 做重型建模,卡满一帧后再爆发,表现为"一阵一阵"。PrinterBox 的有状态迭代器会在下一 tick 续扫剩余位置,
-     * 因此把建模成本摊到多 tick 即可消除卡顿,同时仍能凑足候选池供优先级筛选。
+     * 做重型建模,卡满一帧后再爆发,表现为"一阵一阵"。入口扫描器会在下一 tick 续扫剩余位置,因此把建模成本摊到多 tick
+     * 即可消除卡顿,同时仍能凑足候选池供优先级筛选。
      */
     private static final int MODELING_BUDGET_PER_TICK = 128;
 
-    public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, int maxEffectiveExecutions, int maxTotalIterations) {
-        CandidateShard shard = this.collectCandidateShard(sourceBox, level, maxTotalIterations);
+    public Iterable<BlockPos> iterable(PrinterBox sourceBox, ClientLevel level, LocalPlayer player, int maxEffectiveExecutions, int scanGuardLimit) {
+        CandidateShard shard = this.collectCandidateShard(sourceBox, level, player, scanGuardLimit);
         List<CandidateInfo> candidates = shard.candidates();
 
         List<CandidateInfo> selectedCandidates;
@@ -54,24 +57,39 @@ public final class BedrockCandidatePlanner {
         return filtered;
     }
 
-    private CandidateShard collectCandidateShard(PrinterBox sourceBox, ClientLevel level, int maxTotalIterations) {
-        Iterator<BlockPos> iterator = sourceBox.iterator();
+    private CandidateShard collectCandidateShard(PrinterBox sourceBox, ClientLevel level, LocalPlayer player, int scanGuardLimit) {
+        int scanLimit = this.getCandidateScanLimit(scanGuardLimit);
+        Iterator<BlockPos> iterator = ScanCache.INSTANCE.iterable(
+                "bedrock",
+                sourceBox,
+                level,
+                null,
+                player,
+                scanLimit,
+                ScanIntent.MINE,
+                pos -> true
+        ).iterator();
         List<CandidateInfo> verticalCandidates = new ArrayList<>();
         List<CandidateInfo> sideCandidates = new ArrayList<>();
-        int scanLimit = this.getCandidateScanLimit(maxTotalIterations);
         boolean allowSide = Configs.Bedrock.BEDROCK_ALLOW_SIDE.getBooleanValue();
         int scanned = 0;
         int modeled = 0;
+        boolean hasMoreSource = false;
 
         while (iterator.hasNext()
                 && scanned < scanLimit
                 && verticalCandidates.size() + sideCandidates.size() < CANDIDATE_COLLECT_CAP) {
-            // 单 tick 重型建模预算用尽时停止本 tick 扫描,剩余位置由有状态迭代器在下一 tick 续扫,
+            // 单 tick 重型建模预算用尽时停止本 tick 扫描,剩余位置由入口扫描会话在下一 tick 续扫,
             // 避免大 box 下一次性建模成百上千个基岩造成的卡顿"一阵一阵"。
             if (modeled >= MODELING_BUDGET_PER_TICK) {
+                hasMoreSource = true;
                 break;
             }
             BlockPos pos = iterator.next();
+            if (pos == null) {
+                hasMoreSource = true;
+                break;
+            }
             scanned++;
             if (!this.passesCheapFilters(level, pos)) {
                 continue;
@@ -88,7 +106,7 @@ public final class BedrockCandidatePlanner {
         }
 
         List<CandidateInfo> candidates = verticalCandidates.isEmpty() ? sideCandidates : verticalCandidates;
-        return new CandidateShard(candidates, iterator.hasNext());
+        return new CandidateShard(candidates, hasMoreSource || iterator.hasNext());
     }
 
     /**
@@ -125,8 +143,8 @@ public final class BedrockCandidatePlanner {
         return Math.max(1, Math.min(CANDIDATE_SOFT_CAP, maxEffectiveExecutions));
     }
 
-    private int getCandidateScanLimit(int maxTotalIterations) {
-        int baseScanLimit = maxTotalIterations > 0 ? maxTotalIterations : UNLIMITED_SCAN_SLICE;
+    private int getCandidateScanLimit(int scanGuardLimit) {
+        int baseScanLimit = scanGuardLimit > 0 ? scanGuardLimit : UNLIMITED_SCAN_SLICE;
         BedrockController.HudSnapshot snapshot = BedrockController.getHudSnapshot();
         int activeDeficit = Math.max(1, snapshot.activeCap() - snapshot.activeTargets());
         long expandedScanLimit = (long) baseScanLimit * activeDeficit;

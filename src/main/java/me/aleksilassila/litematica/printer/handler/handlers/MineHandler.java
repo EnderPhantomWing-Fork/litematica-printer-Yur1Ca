@@ -1,11 +1,13 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.Module;
 import me.aleksilassila.litematica.printer.handler.TickContext;
+import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
@@ -23,6 +25,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST;
 import static fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST;
@@ -86,7 +89,7 @@ public class MineHandler extends Module {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Break.BREAK_INTERVAL.getIntegerValue();
+        return 0;
     }
 
     @Override
@@ -95,13 +98,33 @@ public class MineHandler extends Module {
     }
 
     @Override
+    protected int getScanGuardLimit() {
+        return 0;
+    }
+
+    @Override
     protected Iterable<BlockPos> getIterationPositions(PrinterBox playerInteractionBox) {
-        return this.getCachedFilteredIterationPositions(playerInteractionBox, ScanIntent.MINE, this::isMineScanCandidate);
+        PrinterBox scanSourceBox = this.getScanSourceBox(playerInteractionBox);
+        if (scanSourceBox == null) {
+            return List.of();
+        }
+        Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
+        return ScanCache.INSTANCE.unboundedIterable(
+                NAME,
+                scanSourceBox,
+                this.level,
+                SchematicWorldHandler.getSchematicWorld(),
+                this.player,
+                ScanIntent.MINE,
+                this::isMineScanCandidate,
+                pos -> this.canReachIterationPosition(pos) && selectionPredicate.test(pos)
+        );
     }
 
     @Override
     protected void preprocess() {
         this.candidates.clear();
+        this.analyzer.beginTick();
         this.toolSession.beginTick();
         this.continueActiveMineTarget();
     }
@@ -194,7 +217,7 @@ public class MineHandler extends Module {
 
     private void executeToolSession(MineBreakExecutor.Target firstTarget, double nearestDistance) {
         this.toolSession.startSession(firstTarget);
-        if (!MineToolSession.ensureHandToolProtected(this.player, firstTarget)) {
+        if (!this.toolSession.ensureHandToolProtected(this.player, firstTarget)) {
             return;
         }
         BlockBreakResult result = this.executeSessionTarget(firstTarget, !this.analyzer.isCurrentToolEffective(firstTarget));
@@ -214,7 +237,7 @@ public class MineHandler extends Module {
             if (!this.toolSession.isInsideFrontier(this.player, target, nearestDistance)) {
                 break;
             }
-            if (!MineToolSession.ensureHandToolProtected(this.player, target)) {
+            if (!this.toolSession.ensureHandToolProtected(this.player, target)) {
                 break;
             }
             result = this.executeSessionTarget(target, false);

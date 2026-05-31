@@ -8,6 +8,7 @@ import fi.dy.masa.litematica.selection.SelectionMode;
 import fi.dy.masa.litematica.util.EasyPlaceProtocol;
 import fi.dy.masa.litematica.util.PlacementHandler;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -106,6 +107,25 @@ public class LitematicaUtils {
         }
     }
 
+    public static PrinterBox createSelection1BoundingBox() {
+        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
+        if (selection == null) return null;
+        Bounds merged = null;
+        if (DataManager.getSelectionManager().getSelectionMode() == SelectionMode.NORMAL) {
+            List<Box> boxes = selection.getAllSubRegionBoxes();
+            for (Box box : boxes) {
+                Bounds bounds = Bounds.from(box);
+                if (bounds != null) {
+                    merged = merged == null ? bounds : merged.merge(bounds);
+                }
+            }
+        } else {
+            Box box = selection.getSubRegionBox(DataManager.getSimpleArea().getName());
+            merged = Bounds.from(box);
+        }
+        return merged == null ? null : merged.toPrinterBox();
+    }
+
     static boolean comparePos(Box box, BlockPos pos) {
         if (box == null || box.getPos1() == null || box.getPos2() == null || pos == null) return false;
         BlockPos pos1 = box.getPos1();
@@ -136,6 +156,21 @@ public class LitematicaUtils {
                     Math.max(pos1.getY(), pos2.getY()),
                     Math.max(pos1.getZ(), pos2.getZ())
             );
+        }
+
+        Bounds merge(Bounds other) {
+            return new Bounds(
+                    Math.min(this.minX, other.minX),
+                    Math.min(this.minY, other.minY),
+                    Math.min(this.minZ, other.minZ),
+                    Math.max(this.maxX, other.maxX),
+                    Math.max(this.maxY, other.maxY),
+                    Math.max(this.maxZ, other.maxZ)
+            );
+        }
+
+        PrinterBox toPrinterBox() {
+            return new PrinterBox(this.minX, this.minY, this.minZ, this.maxX, this.maxY, this.maxZ);
         }
 
         boolean contains(BlockPos pos) {
