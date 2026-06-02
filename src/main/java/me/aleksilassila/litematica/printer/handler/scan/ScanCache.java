@@ -13,6 +13,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -359,7 +360,7 @@ public final class ScanCache {
     }
 
     private long globalScanBudgetNanos() {
-        return Math.max(250L, Configs.Core.SCAN_TIME_BUDGET_US.getIntegerValue()) * 1_000L;
+        return Math.max(1L, Configs.Core.SCAN_TIME_BUDGET_MS.getIntegerValue()) * 1_000_000L;
     }
 
     private long ownerScanBudgetNanos(long globalBudgetNanos) {
@@ -499,6 +500,12 @@ public final class ScanCache {
                     && pos.getY() >= this.minY && pos.getY() <= this.maxY
                     && pos.getZ() >= this.minZ && pos.getZ() <= this.maxZ;
         }
+
+        boolean containsBlock(int x, int y, int z) {
+            return x >= this.minX && x <= this.maxX
+                    && y >= this.minY && y <= this.maxY
+                    && z >= this.minZ && z <= this.maxZ;
+        }
     }
 
     private final class SectionScanSession {
@@ -516,6 +523,13 @@ public final class ScanCache {
         private int sectionBurstRemaining;
         private boolean currentSectionPrepared;
         private boolean paused;
+        private int liveSectionX;
+        private int liveSectionY;
+        private int liveSectionZ;
+        private int liveLocalIndex;
+        private boolean liveSectionActive;
+        private final BlockPos.MutableBlockPos liveMutable = new BlockPos.MutableBlockPos();
+        private final BlockPos.MutableBlockPos liveNeighbor = new BlockPos.MutableBlockPos();
 
         private SectionScanSession(SectionRegion region, ScanIntent intent) {
             this.region = region;
@@ -548,12 +562,15 @@ public final class ScanCache {
             this.phase = 0;
             this.sectionBurstRemaining = 0;
             this.currentSectionPrepared = false;
+            this.liveSectionActive = false;
+            this.liveLocalIndex = 0;
             return true;
         }
 
         boolean hasPendingSource(long tickTime) {
             return this.canScan(tickTime)
                     && (this.currentSection != null
+                    || this.liveSectionActive
                     || !this.dirtySections.isEmpty()
                     || !this.deferredSections.isEmpty()
                     || !this.cursor.complete);
@@ -575,6 +592,12 @@ public final class ScanCache {
             if (this.isCurrentSection(sectionX, sectionY, sectionZ)) {
                 this.clearCurrentSection();
             }
+            if (this.liveSectionActive
+                    && this.liveSectionX == sectionX
+                    && this.liveSectionY == sectionY
+                    && this.liveSectionZ == sectionZ) {
+                this.liveSectionActive = false;
+            }
             this.removeDeferredSection(sectionX, sectionY, sectionZ);
             this.addDirtySection(sectionX, sectionY, sectionZ);
             this.paused = false;
@@ -588,6 +611,9 @@ public final class ScanCache {
             this.paused = false;
             if (!this.canScan(tickTime)) {
                 return null;
+            }
+            if (this.usesWorld()) {
+                return this.nextLive(level, tickTime, shouldPause, unbounded);
             }
 
             int advancedSections = 0;
@@ -649,7 +675,127 @@ public final class ScanCache {
         }
 
         private boolean usesWorld() {
-            return this.intent == ScanIntent.MINE || this.intent == ScanIntent.FLUID || this.intent == ScanIntent.FILL;
+            return this.intent == ScanIntent.MINE
+                    || this.intent == ScanIntent.FLUID
+                    || this.intent == ScanIntent.FILL
+                    || this.intent == ScanIntent.CUSTOM;
+        }
+
+        /**
+         * 世界 intent 的活体逐方块时间片扫描:复用 SectionCursor 的「玩家中心由近及远」section 顺序,
+         * 但对每个 section 直接逐方块 getBlockState 当场判定,不建 short[]、不缓存 SectionEntry。
+         * 时间预算由 shouldPause 切断,跨 tick 续扫靠 liveSectionXYZ 与 liveLocalIndex 记录进度。
+         * 这是为了消除大交互距离(box 远大于缓存)下反复 new 数组导致的 GC 卡顿。
+         */
+        private Candidate nextLive(ClientLevel level, long tickTime, BooleanSupplier shouldPause, boolean unbounded) {
+            if (level == null) {
+                this.exhaustedUntilTick = tickTime + EXHAUSTED_RESCAN_DELAY_TICKS;
+                return null;
+            }
+            int advancedSections = 0;
+            while (true) {
+                if (this.liveSectionActive) {
+                    Candidate candidate = this.nextFromLiveSection(level);
+                    if (candidate != null) {
+                        return candidate;
+                    }
+                    this.liveSectionActive = false;
+                }
+
+                if ((!unbounded && advancedSections >= MAX_SECTION_ADVANCES_PER_STEP) || shouldPause.getAsBoolean()) {
+                    this.paused = true;
+                    return null;
+                }
+
+                SectionPos sectionPos = this.pollDirtySection();
+                if (sectionPos == null) {
+                    sectionPos = this.cursor.next(this.region);
+                }
+                if (sectionPos == null) {
+                    this.exhaustedUntilTick = tickTime + EXHAUSTED_RESCAN_DELAY_TICKS;
+                    return null;
+                }
+                advancedSections++;
+                if (!level.hasChunk(sectionPos.x(), sectionPos.z())) {
+                    continue;
+                }
+                this.liveSectionX = sectionPos.x();
+                this.liveSectionY = sectionPos.y();
+                this.liveSectionZ = sectionPos.z();
+                this.liveLocalIndex = 0;
+                this.liveSectionActive = true;
+            }
+        }
+
+        private Candidate nextFromLiveSection(ClientLevel level) {
+            int baseX = this.liveSectionX << 4;
+            int baseY = this.liveSectionY << 4;
+            int baseZ = this.liveSectionZ << 4;
+            while (this.liveLocalIndex < SECTION_VOLUME) {
+                int localIndex = this.liveLocalIndex++;
+                int x = baseX + (localIndex & 15);
+                int z = baseZ + (localIndex >> 4 & 15);
+                int y = baseY + (localIndex >> 8 & 15);
+                if (!this.region.containsBlock(x, y, z)) {
+                    continue;
+                }
+                this.liveMutable.set(x, y, z);
+                BlockState state = level.getBlockState(this.liveMutable);
+                if (this.intent == ScanIntent.CUSTOM) {
+                    return new Candidate(new BlockPos(x, y, z), (byte) 0);
+                }
+                byte flags = this.liveFlags(level, x, y, z, state);
+                if (flags != 0) {
+                    return new Candidate(new BlockPos(x, y, z), flags);
+                }
+            }
+            return null;
+        }
+
+        /**
+         * 当场判定一个方块对 world intent 的候选标志,等价于旧缓存路径的 worldSolid/worldFluid/worldFillBase 归类。
+         * 返回 0 表示「非该 intent 候选,跳过」(不发射,省去 exactPredicate 调用)。
+         */
+        private byte liveFlags(ClientLevel level, int x, int y, int z, BlockState state) {
+            switch (this.intent) {
+                case MINE -> {
+                    if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
+                        return 0;
+                    }
+                    return ScanFlags.WORLD_NON_AIR;
+                }
+                case FLUID -> {
+                    if (state.getFluidState().isEmpty()) {
+                        return 0;
+                    }
+                    return (byte) (ScanFlags.WORLD_NON_AIR | ScanFlags.WORLD_FLUID);
+                }
+                case FILL -> {
+                    boolean potential = state.isAir()
+                            || state.getBlock() instanceof LiquidBlock
+                            || BlockUtils.isReplaceable(state);
+                    if (!potential || !this.hasFillSupportNeighborLive(level, x, y, z)) {
+                        return 0;
+                    }
+                    return ScanFlags.BASE_FILL_TARGET;
+                }
+                default -> {
+                    return 0;
+                }
+            }
+        }
+
+        private boolean hasFillSupportNeighborLive(ClientLevel level, int x, int y, int z) {
+            for (Direction direction : DIRECTIONS) {
+                this.liveNeighbor.set(x + direction.getStepX(), y + direction.getStepY(), z + direction.getStepZ());
+                BlockState neighbor = level.getBlockState(this.liveNeighbor);
+                if (!neighbor.isAir()
+                        && !(neighbor.getBlock() instanceof LiquidBlock)
+                        && !BlockUtils.isReplaceable(neighbor)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private Candidate nextFromCurrentSection() {

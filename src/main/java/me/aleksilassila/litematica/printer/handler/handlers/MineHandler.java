@@ -109,12 +109,14 @@ public class MineHandler extends Module {
             return List.of();
         }
         Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
-        return ScanCache.INSTANCE.unboundedIterable(
+        
+        return ScanCache.INSTANCE.iterable(
                 NAME,
                 scanSourceBox,
                 this.level,
                 SchematicWorldHandler.getSchematicWorld(),
                 this.player,
+                this.getScanGuardLimit(),
                 ScanIntent.MINE,
                 this::isMineScanCandidate,
                 pos -> this.canReachIterationPosition(pos) && selectionPredicate.test(pos)
@@ -177,6 +179,7 @@ public class MineHandler extends Module {
                 || result == BlockBreakResult.COMPLETED_WAIT) {
             this.toolSession.consumeAction();
         }
+        this.toolSession.onTargetResolved(result, pos);
         if (result != BlockBreakResult.IN_PROGRESS) {
             this.activeMinePos = null;
             this.setBlockPosCooldown(pos, ConfigUtils.getBreakCooldown());
@@ -260,6 +263,7 @@ public class MineHandler extends Module {
                 || result == BlockBreakResult.COMPLETED_WAIT) {
             this.toolSession.consumeAction();
         }
+        this.toolSession.onTargetResolved(result, target.pos());
         MineResultReporter.record(target.pos(), result);
         return result;
     }

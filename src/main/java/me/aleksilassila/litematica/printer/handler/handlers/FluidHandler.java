@@ -91,12 +91,14 @@ public class FluidHandler extends Module {
             return List.of();
         }
         Predicate<BlockPos> selectionPredicate = this.createSelectionRangePredicate();
-        return ScanCache.INSTANCE.unboundedIterable(
+        
+        return ScanCache.INSTANCE.iterable(
                 NAME,
                 scanSourceBox,
                 this.level,
                 null,
                 this.player,
+                this.getScanGuardLimit(),
                 ScanIntent.FLUID,
                 this::isTargetFluid,
                 pos -> this.canReachIterationPosition(pos) && selectionPredicate.test(pos)

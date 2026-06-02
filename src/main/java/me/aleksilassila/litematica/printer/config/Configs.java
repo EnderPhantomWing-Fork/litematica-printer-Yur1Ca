@@ -124,9 +124,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 256)
                 .build();
 
-        public static final ConfigInteger SCAN_TIME_BUDGET_US = integer("scanTimeBudgetUs")
-                .defaultValue(1000)
-                .range(250, 2000)
+        public static final ConfigInteger SCAN_TIME_BUDGET_MS = integer("scanTimeBudgetMs")
+                .defaultValue(2)
+                .range(1, 10)
                 .build();
 
         // 核心 - 检查玩家方块交互范围
@@ -216,7 +216,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 FILL,
                 FLUID,
                 WORK_RANGE,
-                SCAN_TIME_BUDGET_US,
+                SCAN_TIME_BUDGET_MS,
                 RENDER_HUD,
                 RENDER_HUD_X,
                 RENDER_HUD_Y,

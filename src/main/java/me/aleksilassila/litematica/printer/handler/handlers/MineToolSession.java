@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.phys.Vec3;
 
@@ -16,12 +17,14 @@ final class MineToolSession {
     private int remainingInstantBudget;
     private int remainingSafeToolBreaks;
     private int toolSessionRemaining;
+    private BlockPos lastSessionPos;
 
     void reset() {
         this.sessionToolItem = null;
         this.remainingInstantBudget = 0;
         this.remainingSafeToolBreaks = 0;
         this.toolSessionRemaining = 0;
+        this.lastSessionPos = null;
     }
 
     void beginTick() {
@@ -39,6 +42,14 @@ final class MineToolSession {
 
     MineBreakExecutor.Target selectTarget(List<MineBreakExecutor.Target> candidates, MineBreakExecutor analyzer, LocalPlayer player) {
         MineBreakExecutor.Target nearest = candidates.get(0);
+        if (this.lastSessionPos != null && this.toolSessionRemaining > 0) {
+            for (MineBreakExecutor.Target target : candidates) {
+                if (target.pos().equals(this.lastSessionPos)) {
+                    this.sessionToolItem = target.bestToolItem();
+                    return target;
+                }
+            }
+        }
         if (this.sessionToolItem != null && this.toolSessionRemaining > 0) {
             double nearestDistance = distanceScore(player, nearest);
             for (MineBreakExecutor.Target target : candidates) {
@@ -46,12 +57,14 @@ final class MineToolSession {
                     break;
                 }
                 if (analyzer.hasSameBestTool(target, this.sessionToolItem)) {
+                    this.lastSessionPos = target.pos();
                     return target;
                 }
             }
         }
         this.sessionToolItem = nearest.bestToolItem();
         this.toolSessionRemaining = this.getToolSessionQuota();
+        this.lastSessionPos = nearest.pos();
         return nearest;
     }
 
@@ -76,6 +89,17 @@ final class MineToolSession {
     void consumeAction() {
         if (this.toolSessionRemaining > 0) {
             this.toolSessionRemaining--;
+        }
+    }
+
+    /**
+     * 当一个破坏目标已破掉(或服务端已确认完成)时,释放单目标黏性,允许 selectTarget 选下一个目标。
+     * 块破掉后会自动离开候选集,黏性循环本就找不到它而失效;这里显式清除以覆盖「同位置被掉落方块/流体重新占据」等边缘情况。
+     */
+    void onTargetResolved(BlockBreakResult result, BlockPos pos) {
+        if ((result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT)
+                && pos.equals(this.lastSessionPos)) {
+            this.lastSessionPos = null;
         }
     }
 
