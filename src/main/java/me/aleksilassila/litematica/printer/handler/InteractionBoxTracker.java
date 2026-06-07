@@ -17,6 +17,7 @@ final class InteractionBoxTracker {
     private PrinterBox lastBox;
     @Nullable
     private BlockPos lastPlayerPos;
+    private double lastRange = Double.NaN;
 
     InteractionBoxTracker(boolean enabled) {
         this.boxReference = enabled ? new AtomicReference<>() : null;
@@ -37,13 +38,14 @@ final class InteractionBoxTracker {
         }
         BlockPos playerPos = trackingPos(player);
         double range = getBoxRange();
-        double threshold = Math.max(1.5D, Math.min(8.0D, range * 0.15D));
         @Nullable PrinterBox box = this.boxReference.get();
         if (box == null
                 || !box.equals(this.lastBox)
                 || this.lastPlayerPos == null
-                || !this.lastPlayerPos.closerThan(playerPos, threshold)) {
+                || !this.lastPlayerPos.equals(playerPos)
+                || Double.compare(this.lastRange, range) != 0) {
             this.lastPlayerPos = playerPos;
+            this.lastRange = range;
             box = this.createBox(player, range);
             this.lastBox = box;
             this.boxReference.set(box);

@@ -248,6 +248,8 @@
   "litematica-printer.config.updateCheck.desc": "首次進入世界時，自動檢查模組更新。",
   "litematica-printer.config.scanTimeBudgetMs": "掃描時間預算",
   "litematica-printer.config.scanTimeBudgetMs.desc": "入口掃描器每 tick 的主執行緒耗時上限，單位毫秒。\n這是保險絲，不是效能最佳化開關。調大只允許單 tick 做更多掃描，可能更卡；調小會更早讓到下一 tick，目標刷新可能變慢。",
+  "litematica-printer.config.lazyEnterTicks": "惰性掃描延遲",
+  "litematica-printer.config.lazyEnterTicks.desc": "入口掃描器連續空閒多少 tick 後進入惰性狀態；0 表示停用惰性掃描。",
   "litematica-printer.config.workRange": "工作半徑",
   "litematica-printer.config.workRange.desc": "印表機以玩家為中心的最大工作半徑(方塊)，數值越大覆蓋範圍越廣。\n此參數與§6§l疊代區域形狀§r關聯。",
   "litematica-printer.config.workingSwitch": "工作開關",

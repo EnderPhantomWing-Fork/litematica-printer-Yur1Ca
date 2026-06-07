@@ -36,17 +36,19 @@ public final class ScanCache {
     private static final int MAX_SECTION_CACHE_ENTRIES = 8192;
     private static final int WORLD_SECTION_TTL_TICKS = 80;
     private static final int SCHEMATIC_SECTION_TTL_TICKS = 80;
-    private static final int EXHAUSTED_RESCAN_DELAY_TICKS = 2;
+    private static final int EXHAUSTED_RESCAN_DELAY_TICKS = 1;
     private static final int BUDGET_CHECK_INTERVAL = 8;
     private static final int SECTION_SCAN_BUDGET_CHECK_INTERVAL = 32;
     private static final int MAX_SECTION_ADVANCES_PER_STEP = 16;
     private static final int SECTION_CANDIDATE_BURST = 8;
+    private static final int LIVE_SECTION_SCAN_SLICE_BLOCKS = 256;
     private static final int MAX_INTERLEAVED_SECTIONS = 24;
     private static final byte SAMPLE_AIR = 1;
     private static final byte SAMPLE_LIQUID_BLOCK = 1 << 1;
     private static final byte SAMPLE_FLUID = 1 << 2;
     private static final byte SAMPLE_REPLACEABLE = 1 << 3;
     private static final Direction[] DIRECTIONS = Direction.values();
+    private static final int[][] LOCAL_AXIS_ORDER = buildLocalAxisOrder();
 
     private final Long2ObjectOpenHashMap<SectionEntry> sections = new Long2ObjectOpenHashMap<>();
     private final Map<String, SectionScanSession> sessions = new HashMap<>();
@@ -79,6 +81,7 @@ public final class ScanCache {
             this.sections.clear();
             this.sessions.clear();
             this.asyncPlanner.clear();
+            DirtyRegionTracker.INSTANCE.clear();
             this.levelIdentity = level;
             this.schematicIdentity = schematic;
         }
@@ -364,7 +367,7 @@ public final class ScanCache {
     }
 
     private long ownerScanBudgetNanos(long globalBudgetNanos) {
-        return Math.max(250_000L, globalBudgetNanos / 3L);
+        return Math.max(500_000L, globalBudgetNanos / 2L);
     }
 
     private int getScanLimit(int scanGuardLimit) {
@@ -407,6 +410,29 @@ public final class ScanCache {
         int z = (sectionZ << 4) + (localIndex >> 4 & 15);
         int y = (sectionY << 4) + (localIndex >> 8 & 15);
         return new BlockPos(x, y, z);
+    }
+
+    private static int[][] buildLocalAxisOrder() {
+        int[][] order = new int[SECTION_SIZE][SECTION_SIZE];
+        for (int anchor = 0; anchor < SECTION_SIZE; anchor++) {
+            int index = 0;
+            order[anchor][index++] = anchor;
+            for (int distance = 1; index < SECTION_SIZE; distance++) {
+                int negative = anchor - distance;
+                int positive = anchor + distance;
+                if (negative >= 0) {
+                    order[anchor][index++] = negative;
+                }
+                if (positive < SECTION_SIZE && index < SECTION_SIZE) {
+                    order[anchor][index++] = positive;
+                }
+            }
+        }
+        return order;
+    }
+
+    private static int clampLocal(int value) {
+        return Math.max(0, Math.min(15, value));
     }
 
     private record Candidate(BlockPos pos, byte flags) {
@@ -489,10 +515,22 @@ public final class ScanCache {
                     && this.minSectionZ == other.minSectionZ
                     && this.maxSectionX == other.maxSectionX
                     && this.maxSectionY == other.maxSectionY
-                    && this.maxSectionZ == other.maxSectionZ
-                    && this.centerSectionX == other.centerSectionX
+                    && this.maxSectionZ == other.maxSectionZ;
+        }
+
+        boolean sameCenterSection(SectionRegion other) {
+            return this.centerSectionX == other.centerSectionX
                     && this.centerSectionY == other.centerSectionY
                     && this.centerSectionZ == other.centerSectionZ;
+        }
+
+        boolean sameBlockBounds(SectionRegion other) {
+            return this.minX == other.minX
+                    && this.minY == other.minY
+                    && this.minZ == other.minZ
+                    && this.maxX == other.maxX
+                    && this.maxY == other.maxY
+                    && this.maxZ == other.maxZ;
         }
 
         boolean containsBlock(BlockPos pos) {
@@ -516,6 +554,7 @@ public final class ScanCache {
         private SectionEntry currentSection;
         private short[] currentCandidates = ShortArrayBuilder.EMPTY;
         private final ArrayDeque<SectionProgress> deferredSections = new ArrayDeque<>();
+        private final ArrayDeque<LiveSectionProgress> deferredLiveSections = new ArrayDeque<>();
         private final ArrayDeque<SectionPos> dirtySections = new ArrayDeque<>();
         private final LongSet dirtySectionKeys = new LongOpenHashSet();
         private int candidateIndex;
@@ -527,6 +566,10 @@ public final class ScanCache {
         private int liveSectionY;
         private int liveSectionZ;
         private int liveLocalIndex;
+        private int liveAnchorX;
+        private int liveAnchorY;
+        private int liveAnchorZ;
+        private int liveSectionScannedThisSlice;
         private boolean liveSectionActive;
         private final BlockPos.MutableBlockPos liveMutable = new BlockPos.MutableBlockPos();
         private final BlockPos.MutableBlockPos liveNeighbor = new BlockPos.MutableBlockPos();
@@ -541,7 +584,18 @@ public final class ScanCache {
         }
 
         void updateRegion(SectionRegion region) {
+            boolean boundsChanged = !this.region.sameBlockBounds(region);
+            boolean centerSectionChanged = !this.region.sameCenterSection(region);
             this.region = region;
+            if (centerSectionChanged) {
+                this.prioritizeCenterSections(region);
+                this.clearCurrentSection();
+                this.liveSectionActive = false;
+                this.exhaustedUntilTick = Long.MIN_VALUE;
+                this.paused = false;
+            } else if (boundsChanged && (this.exhaustedUntilTick != Long.MIN_VALUE || this.cursor.complete)) {
+                this.resetProgress();
+            }
         }
 
         boolean canScan(long tickTime) {
@@ -551,11 +605,17 @@ public final class ScanCache {
             if (tickTime < this.exhaustedUntilTick) {
                 return false;
             }
+            this.resetProgress();
+            return true;
+        }
+
+        private void resetProgress() {
             this.cursor = new SectionCursor();
             this.exhaustedUntilTick = Long.MIN_VALUE;
             this.currentSection = null;
             this.currentCandidates = ShortArrayBuilder.EMPTY;
             this.deferredSections.clear();
+            this.deferredLiveSections.clear();
             this.dirtySections.clear();
             this.dirtySectionKeys.clear();
             this.candidateIndex = 0;
@@ -564,7 +624,7 @@ public final class ScanCache {
             this.currentSectionPrepared = false;
             this.liveSectionActive = false;
             this.liveLocalIndex = 0;
-            return true;
+            this.liveSectionScannedThisSlice = 0;
         }
 
         boolean hasPendingSource(long tickTime) {
@@ -573,6 +633,7 @@ public final class ScanCache {
                     || this.liveSectionActive
                     || !this.dirtySections.isEmpty()
                     || !this.deferredSections.isEmpty()
+                    || !this.deferredLiveSections.isEmpty()
                     || !this.cursor.complete);
         }
 
@@ -599,6 +660,7 @@ public final class ScanCache {
                 this.liveSectionActive = false;
             }
             this.removeDeferredSection(sectionX, sectionY, sectionZ);
+            this.removeDeferredLiveSection(sectionX, sectionY, sectionZ);
             this.addDirtySection(sectionX, sectionY, sectionZ);
             this.paused = false;
         }
@@ -683,7 +745,7 @@ public final class ScanCache {
 
         /**
          * 世界 intent 的活体逐方块时间片扫描:复用 SectionCursor 的「玩家中心由近及远」section 顺序,
-         * 但对每个 section 直接逐方块 getBlockState 当场判定,不建 short[]、不缓存 SectionEntry。
+         * 每个 section 内部从最靠近玩家的位置开始扫,直接逐方块 getBlockState 当场判定,不建 short[]、不缓存 SectionEntry。
          * 时间预算由 shouldPause 切断,跨 tick 续扫靠 liveSectionXYZ 与 liveLocalIndex 记录进度。
          * 这是为了消除大交互距离(box 远大于缓存)下反复 new 数组导致的 GC 卡顿。
          */
@@ -695,9 +757,12 @@ public final class ScanCache {
             int advancedSections = 0;
             while (true) {
                 if (this.liveSectionActive) {
-                    Candidate candidate = this.nextFromLiveSection(level);
+                    Candidate candidate = this.nextFromLiveSection(level, shouldPause, unbounded);
                     if (candidate != null) {
                         return candidate;
+                    }
+                    if (this.paused) {
+                        return null;
                     }
                     this.liveSectionActive = false;
                 }
@@ -708,10 +773,20 @@ public final class ScanCache {
                 }
 
                 SectionPos sectionPos = this.pollDirtySection();
+                if (sectionPos == null && this.shouldResumeDeferredLiveSection()) {
+                    this.restoreDeferredLiveSection(this.deferredLiveSections.removeFirst());
+                    advancedSections++;
+                    continue;
+                }
                 if (sectionPos == null) {
                     sectionPos = this.cursor.next(this.region);
                 }
                 if (sectionPos == null) {
+                    if (!this.deferredLiveSections.isEmpty()) {
+                        this.restoreDeferredLiveSection(this.deferredLiveSections.removeFirst());
+                        advancedSections++;
+                        continue;
+                    }
                     this.exhaustedUntilTick = tickTime + EXHAUSTED_RESCAN_DELAY_TICKS;
                     return null;
                 }
@@ -723,19 +798,35 @@ public final class ScanCache {
                 this.liveSectionY = sectionPos.y();
                 this.liveSectionZ = sectionPos.z();
                 this.liveLocalIndex = 0;
+                this.liveAnchorX = clampLocal(this.region.centerX() - (sectionPos.x() << 4));
+                this.liveAnchorY = clampLocal(this.region.centerY() - (sectionPos.y() << 4));
+                this.liveAnchorZ = clampLocal(this.region.centerZ() - (sectionPos.z() << 4));
+                this.liveSectionScannedThisSlice = 0;
                 this.liveSectionActive = true;
             }
         }
 
-        private Candidate nextFromLiveSection(ClientLevel level) {
+        private Candidate nextFromLiveSection(ClientLevel level, BooleanSupplier shouldPause, boolean unbounded) {
             int baseX = this.liveSectionX << 4;
             int baseY = this.liveSectionY << 4;
             int baseZ = this.liveSectionZ << 4;
             while (this.liveLocalIndex < SECTION_VOLUME) {
-                int localIndex = this.liveLocalIndex++;
-                int x = baseX + (localIndex & 15);
-                int z = baseZ + (localIndex >> 4 & 15);
-                int y = baseY + (localIndex >> 8 & 15);
+                if (this.liveSectionScannedThisSlice >= LIVE_SECTION_SCAN_SLICE_BLOCKS) {
+                    this.deferLiveSection();
+                    return null;
+                }
+                if (!unbounded
+                        && this.liveLocalIndex > 0
+                        && this.liveLocalIndex % SECTION_SCAN_BUDGET_CHECK_INTERVAL == 0
+                        && shouldPause.getAsBoolean()) {
+                    this.paused = true;
+                    return null;
+                }
+                int orderIndex = this.liveLocalIndex++;
+                this.liveSectionScannedThisSlice++;
+                int x = baseX + LOCAL_AXIS_ORDER[this.liveAnchorX][orderIndex & 15];
+                int z = baseZ + LOCAL_AXIS_ORDER[this.liveAnchorZ][orderIndex >> 4 & 15];
+                int y = baseY + LOCAL_AXIS_ORDER[this.liveAnchorY][orderIndex >> 8 & 15];
                 if (!this.region.containsBlock(x, y, z)) {
                     continue;
                 }
@@ -820,6 +911,11 @@ public final class ScanCache {
                     && (this.cursor.complete || this.deferredSections.size() >= MAX_INTERLEAVED_SECTIONS);
         }
 
+        private boolean shouldResumeDeferredLiveSection() {
+            return !this.deferredLiveSections.isEmpty()
+                    && (this.cursor.complete || this.deferredLiveSections.size() >= MAX_INTERLEAVED_SECTIONS);
+        }
+
         private boolean isCurrentSection(int sectionX, int sectionY, int sectionZ) {
             return this.currentSection != null
                     && this.currentSection.sectionX == sectionX
@@ -838,10 +934,58 @@ public final class ScanCache {
             }
         }
 
+        private void removeDeferredLiveSection(int sectionX, int sectionY, int sectionZ) {
+            Iterator<LiveSectionProgress> iterator = this.deferredLiveSections.iterator();
+            while (iterator.hasNext()) {
+                LiveSectionProgress progress = iterator.next();
+                if (progress.sectionX() == sectionX && progress.sectionY() == sectionY && progress.sectionZ() == sectionZ) {
+                    iterator.remove();
+                }
+            }
+        }
+
         private void addDirtySection(int sectionX, int sectionY, int sectionZ) {
             long key = sectionKey(sectionX, sectionY, sectionZ);
             if (this.dirtySectionKeys.add(key)) {
                 this.dirtySections.addLast(new SectionPos(sectionX, sectionY, sectionZ));
+            }
+        }
+
+        private void addPrioritySection(int sectionX, int sectionY, int sectionZ) {
+            if (!this.region.containsSection(sectionX, sectionY, sectionZ)) {
+                return;
+            }
+            this.removeDeferredSection(sectionX, sectionY, sectionZ);
+            this.removeDeferredLiveSection(sectionX, sectionY, sectionZ);
+            long key = sectionKey(sectionX, sectionY, sectionZ);
+            if (!this.dirtySectionKeys.add(key)) {
+                this.removeDirtySection(sectionX, sectionY, sectionZ);
+                this.dirtySectionKeys.add(key);
+            }
+            this.dirtySections.addFirst(new SectionPos(sectionX, sectionY, sectionZ));
+        }
+
+        private void prioritizeCenterSections(SectionRegion region) {
+            int sectionX = region.centerSectionX();
+            int sectionY = region.centerSectionY();
+            int sectionZ = region.centerSectionZ();
+            this.addPrioritySection(sectionX, sectionY - 1, sectionZ);
+            this.addPrioritySection(sectionX, sectionY + 1, sectionZ);
+            this.addPrioritySection(sectionX, sectionY, sectionZ - 1);
+            this.addPrioritySection(sectionX, sectionY, sectionZ + 1);
+            this.addPrioritySection(sectionX - 1, sectionY, sectionZ);
+            this.addPrioritySection(sectionX + 1, sectionY, sectionZ);
+            this.addPrioritySection(sectionX, sectionY, sectionZ);
+        }
+
+        private void removeDirtySection(int sectionX, int sectionY, int sectionZ) {
+            Iterator<SectionPos> iterator = this.dirtySections.iterator();
+            while (iterator.hasNext()) {
+                SectionPos sectionPos = iterator.next();
+                if (sectionPos.x() == sectionX && sectionPos.y() == sectionY && sectionPos.z() == sectionZ) {
+                    iterator.remove();
+                    return;
+                }
             }
         }
 
@@ -866,6 +1010,25 @@ public final class ScanCache {
             this.clearCurrentSection();
         }
 
+        private void deferLiveSection() {
+            if (!this.liveSectionActive || this.liveLocalIndex >= SECTION_VOLUME) {
+                this.liveSectionActive = false;
+                this.liveSectionScannedThisSlice = 0;
+                return;
+            }
+            this.deferredLiveSections.addLast(new LiveSectionProgress(
+                    this.liveSectionX,
+                    this.liveSectionY,
+                    this.liveSectionZ,
+                    this.liveLocalIndex,
+                    this.liveAnchorX,
+                    this.liveAnchorY,
+                    this.liveAnchorZ
+            ));
+            this.liveSectionActive = false;
+            this.liveSectionScannedThisSlice = 0;
+        }
+
         private void restoreDeferredSection(SectionProgress progress) {
             this.currentSection = progress.section();
             this.currentCandidates = progress.candidates();
@@ -873,6 +1036,18 @@ public final class ScanCache {
             this.phase = progress.phase();
             this.sectionBurstRemaining = SECTION_CANDIDATE_BURST;
             this.currentSectionPrepared = true;
+        }
+
+        private void restoreDeferredLiveSection(LiveSectionProgress progress) {
+            this.liveSectionX = progress.sectionX();
+            this.liveSectionY = progress.sectionY();
+            this.liveSectionZ = progress.sectionZ();
+            this.liveLocalIndex = progress.localIndex();
+            this.liveAnchorX = progress.anchorX();
+            this.liveAnchorY = progress.anchorY();
+            this.liveAnchorZ = progress.anchorZ();
+            this.liveSectionScannedThisSlice = 0;
+            this.liveSectionActive = true;
         }
 
         private void clearCurrentSection() {
@@ -885,6 +1060,17 @@ public final class ScanCache {
         }
 
         private record SectionProgress(SectionEntry section, short[] candidates, int candidateIndex, int phase) {
+        }
+
+        private record LiveSectionProgress(
+                int sectionX,
+                int sectionY,
+                int sectionZ,
+                int localIndex,
+                int anchorX,
+                int anchorY,
+                int anchorZ
+        ) {
         }
     }
 

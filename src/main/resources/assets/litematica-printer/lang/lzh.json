@@ -248,6 +248,8 @@
   "litematica-printer.config.updateCheck.desc": "初入天地時，自察模組新版本。",
   "litematica-printer.config.scanTimeBudgetMs": "掃描時限",
   "litematica-printer.config.scanTimeBudgetMs.desc": "入口掃描器每 tick 可用主緒之時限，單位毫秒。\n此乃保險限，不是效能妙藥。值大則同 tick 掃描更多，亦可傷幀；值小則早讓至後 tick，尋標或稍遲。",
+  "litematica-printer.config.lazyEnterTicks": "惰掃延時",
+  "litematica-printer.config.lazyEnterTicks.desc": "入口掃描器連續閒置若干 tick 後入惰態；零則不用惰掃。",
   "litematica-printer.config.workRange": "工徑",
   "litematica-printer.config.workRange.desc": "機巧以玩家為心之最遠工徑（石），值愈大則覆域愈廣。此參與§6§l徧歷域形§r相關。",
   "litematica-printer.config.workingSwitch": "工訣",

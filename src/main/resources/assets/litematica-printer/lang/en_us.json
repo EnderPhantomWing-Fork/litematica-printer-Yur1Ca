@@ -254,6 +254,8 @@
   "litematica-printer.config.updateCheck.desc": "Automatically check for mod updates when first entering world.",
   "litematica-printer.config.scanTimeBudgetMs": "Scan Time Budget",
   "litematica-printer.config.scanTimeBudgetMs.desc": "Main-thread time cap for the entry scanner per tick, in milliseconds.\nThis is a safety fuse, not a performance optimization switch. Raising it only allows more same-tick scanning and may stutter; lowering it yields earlier to the next tick and may refresh targets more slowly.",
+  "litematica-printer.config.lazyEnterTicks": "Lazy Scan Delay",
+  "litematica-printer.config.lazyEnterTicks.desc": "Number of continuously idle ticks before the entry scanner enters lazy state; 0 disables lazy scanning.",
   "litematica-printer.config.workRange": "Work Radius",
   "litematica-printer.config.workRange.desc": "Printer's maximum work radius centered on player (blocks). Larger values mean wider coverage.\nThis parameter is associated with §6§lIteration Area Shape§r.",
   "litematica-printer.config.workingSwitch": "Work Switch",

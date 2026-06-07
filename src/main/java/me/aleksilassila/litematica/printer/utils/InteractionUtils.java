@@ -212,9 +212,16 @@ public class InteractionUtils {
                 if (!ConfigUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
                     continue;
                 }
-                if (continueDestroyBlock(pos, Direction.DOWN) == BlockBreakResult.IN_PROGRESS) {
+                BlockBreakResult result = continueDestroyBlock(pos, Direction.DOWN);
+                if (result == BlockBreakResult.IN_PROGRESS) {
                     breakPos = pos;
                     break;
+                }
+                if (result == BlockBreakResult.COMPLETED || result == BlockBreakResult.COMPLETED_WAIT) {
+                    this.markRecentlyBroken(pos);
+                    if (result == BlockBreakResult.COMPLETED_WAIT) {
+                        this.markPendingBroken(pos, ConfigUtils.getBreakCooldown());
+                    }
                 }
             }
         } else {

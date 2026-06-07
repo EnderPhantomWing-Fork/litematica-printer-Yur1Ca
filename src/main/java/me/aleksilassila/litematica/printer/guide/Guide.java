@@ -11,6 +11,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
 public abstract class Guide extends BlockStateUtils {
     protected final SchematicBlockContext context;
@@ -44,9 +45,16 @@ public abstract class Guide extends BlockStateUtils {
             return this.onBuildActionCorrect(state);
         }
 
-        // 水相关方块由 WaterGuide 特判处理，不能在这里提前拦掉
-        if (!BlockStateUtils.isWaterBlock(requiredState) && !requiredState.canSurvive(level, blockPos)) {
-            return Result.PASS;
+        if (state == BlockMatchResult.MISSING) {
+            // 水相关方块由 WaterGuide 特判处理，不能在这里提前拦掉
+            if (!BlockStateUtils.isWaterBlock(requiredState) && !requiredState.canSurvive(level, blockPos)) {
+                return Result.PASS;
+            }
+            // 双格方块的上半部分由下半部分生成，缺失时不独立放置
+            if (requiredState.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)
+                    && requiredState.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) {
+                return Result.PASS;
+            }
         }
 
         // 水生植物（海草等）需要水环境才能放置

@@ -129,6 +129,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 10)
                 .build();
 
+        public static final ConfigInteger LAZY_ENTER_TICKS = integer("lazyEnterTicks")
+                .defaultValue(10)
+                .range(0, 40)
+                .build();
+
         // 核心 - 检查玩家方块交互范围
         public static final ConfigBoolean CHECK_PLAYER_INTERACTION_RANGE = bool("checkPlayerInteractionRange")
                 .defaultValue(true)
@@ -217,6 +222,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 FLUID,
                 WORK_RANGE,
                 SCAN_TIME_BUDGET_MS,
+                LAZY_ENTER_TICKS,
                 RENDER_HUD,
                 RENDER_HUD_X,
                 RENDER_HUD_Y,

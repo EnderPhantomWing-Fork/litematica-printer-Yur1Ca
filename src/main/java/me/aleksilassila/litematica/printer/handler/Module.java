@@ -7,6 +7,7 @@ import fi.dy.masa.malilib.config.options.ConfigOptionList;
 import lombok.Getter;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.*;
+import me.aleksilassila.litematica.printer.handler.scan.DirtyRegionTracker;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
 import me.aleksilassila.litematica.printer.handler.scan.ScanIntent;
 import me.aleksilassila.litematica.printer.printer.*;
@@ -26,10 +27,16 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 public abstract class Module extends ConfigUtils {
+    private static final int LAZY_DIRTY_FULL_SCAN_THRESHOLD = 2;
+
     @Getter
     @Nullable
     public final AtomicReference<PrinterBox> playerInteractionBox;
@@ -48,6 +55,19 @@ public abstract class Module extends ConfigUtils {
     private final ConfigOptionList selectionType;
     private final AtomicReference<Boolean> skipIteration = new AtomicReference<>(false);
     private boolean iterationConsumedEffectiveExecution = true;
+    @Getter
+    private ScanState scanState = ScanState.FULL;
+    @Getter
+    private int pendingDirtyRegionCount;
+    private int idleScanTicks;
+    @Nullable
+    private PrinterBox lastScanSourceBox;
+    private long lastDirtyVersion;
+    private final ArrayDeque<PrinterBox> dirtyScanQueue = new ArrayDeque<>();
+    @Nullable
+    private PrinterBox activeDirtyScanBox;
+    private boolean currentIterationDidWork;
+    private boolean currentIterationFoundCandidate;
 
     protected Minecraft mc;
     protected ClientLevel level;
@@ -86,11 +106,13 @@ public abstract class Module extends ConfigUtils {
             return;
         }
         if (!isEnable()) {
+            this.resetScanRuntime();
             this.resetPlayerTracking();
             return;
         }
         this.updateVariables(context);
         if (!this.hasRequiredClientState()) {
+            this.resetScanRuntime();
             this.resetPlayerTracking();
             return;
         }
@@ -98,6 +120,7 @@ public abstract class Module extends ConfigUtils {
         this.updatePlayerInteractionBox();
         this.preprocess(); // 运行前处理的事情
         if (!this.isConfigAllowExecute()) {
+            this.resetScanRuntime();
             this.resetPlayerTracking();
             return;
         }
@@ -156,7 +179,203 @@ public abstract class Module extends ConfigUtils {
         if (playerInteractionBox == null || !this.canIterate()) {
             return false;
         }
-        return this.runIterationLoop(playerInteractionBox);
+        PrinterBox scanSourceBox = this.getScanSourceBox(playerInteractionBox);
+        if (scanSourceBox == null) {
+            this.lastScanSourceBox = null;
+            return false;
+        }
+        this.updateScanSource(scanSourceBox);
+        if (!this.isLazyScanEnabled()) {
+            this.scanState = ScanState.FULL;
+            this.clearDirtyScanQueue();
+            return this.runFullIteration(playerInteractionBox);
+        }
+        return switch (this.scanState) {
+            case FULL -> this.runFullIteration(playerInteractionBox);
+            case PARTIAL -> this.runPartialIteration(playerInteractionBox);
+            case LAZY -> this.runLazyIteration(playerInteractionBox);
+        };
+    }
+
+    private void updateScanSource(PrinterBox scanSourceBox) {
+        if (scanSourceBox.equals(this.lastScanSourceBox)) {
+            return;
+        }
+        this.lastScanSourceBox = scanSourceBox;
+        this.scanState = ScanState.FULL;
+        this.idleScanTicks = 0;
+        this.lastDirtyVersion = DirtyRegionTracker.INSTANCE.currentVersion();
+        this.clearDirtyScanQueue();
+    }
+
+    private boolean runFullIteration(PrinterBox playerInteractionBox) {
+        boolean interrupt = this.runIterationLoop(playerInteractionBox);
+        this.updateFullScanIdleState(interrupt);
+        return interrupt;
+    }
+
+    private boolean runLazyIteration(PrinterBox playerInteractionBox) {
+        this.refreshDirtyScanQueue(playerInteractionBox);
+        if (this.scanState == ScanState.LAZY) {
+            return this.runLazyProbeIteration(playerInteractionBox);
+        }
+        if (this.scanState == ScanState.FULL) {
+            return this.runFullIteration(playerInteractionBox);
+        }
+        return this.runPartialIteration(playerInteractionBox);
+    }
+
+    private boolean runLazyProbeIteration(PrinterBox playerInteractionBox) {
+        this.pendingDirtyRegionCount = 0;
+        boolean interrupt = this.runIterationLoop(playerInteractionBox);
+        if (this.currentIterationDidWork || this.currentIterationFoundCandidate) {
+            this.scanState = ScanState.FULL;
+            this.idleScanTicks = 0;
+            return interrupt;
+        }
+        this.scanState = ScanState.LAZY;
+        return true;
+    }
+
+    private boolean runPartialIteration(PrinterBox playerInteractionBox) {
+        if (this.activeDirtyScanBox == null) {
+            if (this.dirtyScanQueue.isEmpty()) {
+                this.refreshDirtyScanQueue(playerInteractionBox);
+                if (this.scanState == ScanState.LAZY) {
+                    return false;
+                }
+                if (this.scanState == ScanState.FULL) {
+                    return this.runFullIteration(playerInteractionBox);
+                }
+            }
+            this.activeDirtyScanBox = this.dirtyScanQueue.pollFirst();
+        }
+
+        if (this.activeDirtyScanBox == null) {
+            this.scanState = ScanState.LAZY;
+            this.pendingDirtyRegionCount = 0;
+            return false;
+        }
+
+        PrinterBox boundedDirtyBox = intersect(playerInteractionBox, this.activeDirtyScanBox);
+        if (boundedDirtyBox == null || this.getScanSourceBox(boundedDirtyBox) == null) {
+            this.activeDirtyScanBox = null;
+            this.updatePartialScanState(false);
+            return this.hasPendingPartialScan();
+        }
+
+        boolean interrupt = this.runIterationLoop(boundedDirtyBox);
+        if (!interrupt) {
+            this.activeDirtyScanBox = null;
+        }
+        this.updatePartialScanState(interrupt);
+        return interrupt || this.hasPendingPartialScan();
+    }
+
+    private void refreshDirtyScanQueue(PrinterBox playerInteractionBox) {
+        DirtyRegionTracker.DirtySnapshot snapshot = DirtyRegionTracker.INSTANCE.snapshotAfter(this.lastDirtyVersion, playerInteractionBox);
+        this.lastDirtyVersion = snapshot.version();
+        this.dirtyScanQueue.clear();
+        this.activeDirtyScanBox = null;
+
+        List<PrinterBox> dirtyBoxes = new ArrayList<>();
+        for (PrinterBox dirtyBox : snapshot.boxes()) {
+            PrinterBox boundedDirtyBox = intersect(playerInteractionBox, dirtyBox);
+            if (boundedDirtyBox != null && this.getScanSourceBox(boundedDirtyBox) != null) {
+                dirtyBoxes.add(boundedDirtyBox);
+            }
+        }
+        dirtyBoxes.sort(Comparator.comparingDouble(this::distanceToPlayerSqr));
+        this.dirtyScanQueue.addAll(dirtyBoxes);
+
+        this.pendingDirtyRegionCount = this.dirtyScanQueue.size();
+        if (this.dirtyScanQueue.isEmpty()) {
+            this.scanState = ScanState.LAZY;
+            return;
+        }
+
+        int fullThreshold = LAZY_DIRTY_FULL_SCAN_THRESHOLD;
+        if (fullThreshold <= 0 || this.dirtyScanQueue.size() >= fullThreshold) {
+            this.scanState = ScanState.FULL;
+            this.clearDirtyScanQueue();
+            return;
+        }
+        this.scanState = ScanState.PARTIAL;
+    }
+
+    private void updateFullScanIdleState(boolean interrupt) {
+        if (interrupt) {
+            this.idleScanTicks = 0;
+            return;
+        }
+        if (this.currentIterationDidWork || this.currentIterationFoundCandidate) {
+            this.idleScanTicks = 0;
+            return;
+        }
+        int lazyThreshold = Configs.Core.LAZY_ENTER_TICKS.getIntegerValue();
+        if (lazyThreshold <= 0) {
+            return;
+        }
+        if (++this.idleScanTicks >= lazyThreshold) {
+            this.scanState = ScanState.LAZY;
+            this.idleScanTicks = 0;
+            this.lastDirtyVersion = DirtyRegionTracker.INSTANCE.currentVersion();
+            this.clearDirtyScanQueue();
+        }
+    }
+
+    private void updatePartialScanState(boolean interrupt) {
+        this.pendingDirtyRegionCount = this.dirtyScanQueue.size() + (this.activeDirtyScanBox == null ? 0 : 1);
+        if (interrupt) {
+            return;
+        }
+        if (!this.hasPendingPartialScan()) {
+            this.scanState = ScanState.LAZY;
+            this.idleScanTicks = 0;
+            this.pendingDirtyRegionCount = 0;
+        }
+    }
+
+    private boolean hasPendingPartialScan() {
+        return this.activeDirtyScanBox != null || !this.dirtyScanQueue.isEmpty();
+    }
+
+    private boolean isLazyScanEnabled() {
+        return Configs.Core.LAZY_ENTER_TICKS.getIntegerValue() > 0;
+    }
+
+    private void clearDirtyScanQueue() {
+        this.dirtyScanQueue.clear();
+        this.activeDirtyScanBox = null;
+        this.pendingDirtyRegionCount = 0;
+    }
+
+    private void resetScanRuntime() {
+        this.scanState = ScanState.FULL;
+        this.idleScanTicks = 0;
+        this.lastScanSourceBox = null;
+        this.lastDirtyVersion = DirtyRegionTracker.INSTANCE.currentVersion();
+        this.clearDirtyScanQueue();
+    }
+
+    private double distanceToPlayerSqr(PrinterBox box) {
+        if (this.player == null) {
+            return 0.0D;
+        }
+        double dx = axisDistance(this.player.getX(), box.minX, box.maxX);
+        double dy = axisDistance(this.player.getEyeY(), box.minY, box.maxY);
+        double dz = axisDistance(this.player.getZ(), box.minZ, box.maxZ);
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static double axisDistance(double value, int min, int max) {
+        if (value < min) {
+            return min - value;
+        }
+        if (value > max) {
+            return value - max;
+        }
+        return 0.0D;
     }
 
     private boolean runIterationLoop(PrinterBox playerInteractionBox) {
@@ -167,6 +386,8 @@ public abstract class Module extends ConfigUtils {
         boolean interrupt = false;
         boolean trackGuiBlockInfo = this.shouldTrackGuiBlockInfo();
         this.skipIteration.set(false);
+        this.currentIterationDidWork = false;
+        this.currentIterationFoundCandidate = false;
         this.guiBlockInfoBuffer.resetForTracking(trackGuiBlockInfo);
 
         Iterable<BlockPos> iterationPositions = this.getIterationPositions(playerInteractionBox);
@@ -211,7 +432,12 @@ public abstract class Module extends ConfigUtils {
             if (gui != null) {
                 gui.posInSelectionRange = true;
             }
-            if (this.canIterationBlockPos(pos) && !isBlockPosOnCooldown(pos)) {
+            if (this.canIterationBlockPos(pos)) {
+                this.currentIterationFoundCandidate = true;
+                if (isBlockPosOnCooldown(pos)) {
+                    this.guiBlockInfoBuffer.add(gui);
+                    continue;
+                }
                 this.iterationConsumedEffectiveExecution = true;
                 this.executeIteration(pos, this.skipIteration);
                 if (gui != null) {
@@ -221,6 +447,9 @@ public abstract class Module extends ConfigUtils {
                 if (this.skipIteration.get()
                         || maxEffectiveExec > 0 && consumedEffectiveExecution && ++effectiveExecCount >= maxEffectiveExec) {
                     interrupt = true;
+                }
+                if (consumedEffectiveExecution) {
+                    this.currentIterationDidWork = true;
                 }
             }
             this.guiBlockInfoBuffer.add(gui);

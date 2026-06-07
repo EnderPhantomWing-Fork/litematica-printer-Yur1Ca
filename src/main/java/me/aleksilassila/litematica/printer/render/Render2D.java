@@ -1,9 +1,12 @@
 package me.aleksilassila.litematica.printer.render;
 
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.ScanState;
 import me.aleksilassila.litematica.printer.enums.WorkingModeType;
 import me.aleksilassila.litematica.printer.handler.HudStatsManager;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
+import me.aleksilassila.litematica.printer.handler.Module;
+import me.aleksilassila.litematica.printer.handler.Modules;
 import me.aleksilassila.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.render.Render2DUtils;
@@ -209,7 +212,12 @@ public class Render2D {
         if (shouldDisplayModeRate(mode)) {
             text.append(getModeRateLabel(mode)).append(' ').append(formatRate(actualRate)).append("/s | ");
         }
-        text.append("设置 ").append(formatModeSettings(mode)).append(" | 状态 ").append(status);
+        Module module = getModule(mode);
+        text.append("设置 ").append(formatModeSettings(mode));
+        if (module != null) {
+            text.append(" | 扫描 ").append(formatScanState(module));
+        }
+        text.append(" | 状态 ").append(status);
         lines.add(new HudLine(text.toString(), new Color(120, 220, 255, 255)));
     }
 
@@ -244,6 +252,7 @@ public class Render2D {
         lines.add(new HudLine("吞吐 " + bedrock.configuredThroughput()
                 + " | 提交 " + bedrock.acceptedThisTick() + "/" + bedrock.submitCap()
                 + " | 阻塞 " + bedrock.rejectedThisTick()
+                + " | 扫描 " + formatScanState(Modules.BEDROCK)
                 + " | 状态 " + status, new Color(255, 255, 255, 255)));
     }
 
@@ -355,6 +364,31 @@ public class Render2D {
             case BEDROCK -> "成功";
             case TOTAL -> "速率";
         };
+    }
+
+    private Module getModule(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT -> Modules.PRINT;
+            case MINE -> Modules.MINE;
+            case FILL -> Modules.FILL;
+            case FLUID -> Modules.FLUID;
+            case BEDROCK -> Modules.BEDROCK;
+            case TOTAL -> null;
+        };
+    }
+
+    private String formatScanState(Module module) {
+        ScanState state = module.getScanState();
+        String text = switch (state) {
+            case FULL -> "全量";
+            case PARTIAL -> "局部";
+            case LAZY -> "惰性";
+        };
+        int dirtyRegions = module.getPendingDirtyRegionCount();
+        if (dirtyRegions > 0) {
+            text += "(" + dirtyRegions + ")";
+        }
+        return text;
     }
 
     private String humanizeCommonModeReason(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot, double actualRate) {

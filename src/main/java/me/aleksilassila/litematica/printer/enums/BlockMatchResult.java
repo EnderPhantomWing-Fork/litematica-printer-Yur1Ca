@@ -28,7 +28,7 @@ public enum BlockMatchResult {
 
 
     public static BlockMatchResult compare(SchematicBlockContext context, Property<?>... propertiesToIgnore) {
-        if (context.requiredState == context.currentState) {
+        if (context.requiredState.equals(context.currentState)) {
             return CORRECT;
         }
         if (context.requiredState.getBlock().equals(context.currentState.getBlock())) {
