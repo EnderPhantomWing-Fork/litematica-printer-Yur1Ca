@@ -17,7 +17,7 @@ public final class Modules {
     public static final BedrockHandler BEDROCK = new BedrockHandler();
 
     public static final ImmutableList<Module> VALUES = ImmutableList.of(
-            GUI, PRINT, FILL, FLUID, MINE, BEDROCK
+            GUI, MINE, FLUID, PRINT, FILL, BEDROCK
     );
 
     private Modules() {

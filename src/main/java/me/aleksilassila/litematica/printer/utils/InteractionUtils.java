@@ -261,6 +261,14 @@ public class InteractionUtils {
         }
     }
 
+    public void confirmServerBlockUpdate(BlockPos pos) {
+        if (pos == null) {
+            return;
+        }
+        this.recentlyBroken.remove(pos);
+        this.pendingBroken.remove(pos);
+    }
+
     public void clearPendingBroken(BlockPos pos) {
         if (pos != null) {
             this.pendingBroken.remove(pos);

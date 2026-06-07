@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.scan.DirtyRegionTracker;
 import me.aleksilassila.litematica.printer.handler.scan.ScanCache;
+import me.aleksilassila.litematica.printer.utils.InteractionUtils;
 import me.aleksilassila.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -36,6 +37,7 @@ public abstract class MixinClientPacketListener {
     private void invalidateScanCacheBlock(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
         ScanCache.INSTANCE.invalidate(packet.getPos());
         DirtyRegionTracker.INSTANCE.markDirty(packet.getPos());
+        InteractionUtils.INSTANCE.confirmServerBlockUpdate(packet.getPos());
     }
 
     @Inject(method = "handleChunkBlocksUpdate", at = @At("RETURN"))
@@ -43,6 +45,7 @@ public abstract class MixinClientPacketListener {
         packet.runUpdates((pos, state) -> {
             ScanCache.INSTANCE.invalidate(pos);
             DirtyRegionTracker.INSTANCE.markDirty(pos);
+            InteractionUtils.INSTANCE.confirmServerBlockUpdate(pos);
         });
     }
 }
